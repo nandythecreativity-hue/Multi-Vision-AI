@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.email == "nandythecreativity@gmail.com" && request.auth.token.email_verified == true);
+    }
+
+    // ===============================================================
+    // Data Validation
+    // ===============================================================
+    function isValidUser(data) {
+      return data.uid is string &&
+             data.email is string &&
+             data.credits is number &&
+             data.role in ['admin', 'user'];
+    }
+
+    match /users/{userId} {
+      // Users can read their own profile, admins can read all
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Users can create their own profile
+      allow create: if isOwner(userId) && 
+        isValidUser(request.resource.data) &&
+        (
+          (request.resource.data.credits == 60 && request.resource.data.role == 'user') ||
+          (request.resource.data.email == "nandythecreativity@gmail.com" && request.resource.data.role == 'admin')
+        );
+        
+      // Users can update their own credits (decrement only for generation)
+      // Admins can update any user's credits (top up)
+      allow update: if (
+          isOwner(userId) && 
+          isValidUser(request.resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['credits']) &&
+          request.resource.data.credits < resource.data.credits
+        ) || isAdmin();
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

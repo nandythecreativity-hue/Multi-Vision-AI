@@ -1,0 +1,8 @@
+{
+  "name": "Multi Vision AI",
+  "description": "Professional-grade AI video and image generation with advanced character modeling, product placement, and cinematic controls.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
