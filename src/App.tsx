@@ -32,7 +32,9 @@ import {
   UserCircle2,
   History,
   LogIn,
-  LogOut
+  LogOut,
+  Smartphone,
+  Wand2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -47,8 +49,25 @@ import {
   updateDoc, 
   onSnapshot,
   increment,
-  FirebaseUser
+  query,
+  where,
+  getDocs,
+  collection,
+  FirebaseUser,
+  handleFirestoreError,
+  OperationType
 } from './firebase';
+
+import { AppMode, AspectRatio, HistoryItem, Product } from './types';
+import { 
+  ANIMATION_STYLES, 
+  CAMERA_STYLES, 
+  SCENE_TYPES, 
+  LIGHTING_STYLES, 
+  CHARACTER_POSES, 
+  CHARACTER_AGES, 
+  STYLE_PRESETS 
+} from './constants';
 
 // Types for AI Studio API Key Selection
 declare global {
@@ -60,53 +79,13 @@ declare global {
   }
 }
 
-type AspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
-type Resolution = '720p' | '1080p' | '1K' | '2K';
-type AppMode = 'video' | 'text-to-image' | 'image-to-image' | 'history';
+import { Header } from './components/Header';
+import { HistoryView } from './components/HistoryView';
+import { PromptConfiguration } from './components/PromptConfiguration';
+import { SettingsModal } from './components/SettingsModal';
+import { Controls } from './components/Controls';
 
-type HistoryItem = {
-  id: string;
-  type: 'video' | 'image';
-  url: string;
-  thumbnail?: string;
-  prompt: string;
-  timestamp: number;
-  metadata?: {
-    title?: string;
-    description?: string;
-  };
-  operation?: any; // For video extension
-};
-
-type Product = {
-  name: string;
-  image?: string;
-};
-
-const ANIMATION_STYLES = [
-  'Default', 'Realistic', 'Pixar Disney', 'Anime', 'Cyberpunk', 'Cinematic', '3D Render', 'Sketch', 'Oil Painting', 'Digital Art', 'Vibrant',
-  'Vogue Editorial', 'National Geographic', 'Synthwave', 'Dark Noir', 'Minimalist', 'Surrealist', 'Street Photography', 'Macro'
-];
-
-const CAMERA_STYLES = [
-  'Default', 'Static', 'Pan Left', 'Pan Right', 'Zoom In', 'Zoom Out', 'Drone Shot', 'Handheld', 'Low Angle', 'High Angle'
-];
-
-const SCENE_TYPES = [
-  'Default', 'Urban', 'Nature', 'Space', 'Underwater', 'Fantasy', 'Sci-Fi', 'Interior', 'Exterior'
-];
-
-const LIGHTING_STYLES = [
-  'Default', 'Natural', 'Studio', 'Neon', 'Golden Hour', 'Moody', 'Bright', 'Cinematic', 'Soft'
-];
-
-const CHARACTER_POSES = [
-  'Default', 'Standing', 'Walking', 'Sitting', 'Running', 'Dancing', 'Posing', 'Action'
-];
-
-const CHARACTER_AGES = [
-  'Default', 'Child', 'Teenager', 'Young Adult', 'Adult', 'Middle-aged', 'Elderly'
-];
+type Resolution = '720p' | '1080p' | '1K' | '2K' | '4K';
 
 export default function App() {
   const [mode, setMode] = useState<AppMode>('video');
@@ -115,6 +94,7 @@ export default function App() {
   const [image, setImage] = useState<string | null>(null);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   const [resolution, setResolution] = useState<Resolution>('720p');
+  const [scaleImage, setScaleImage] = useState(false);
   const [enableSound, setEnableSound] = useState(true);
   
   // New features: Character Models & Products
@@ -134,6 +114,7 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExtending, setIsExtending] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [isEnhancing, setIsEnhancing] = useState(false);
   const [status, setStatus] = useState<string>('');
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [lastVideoOperation, setLastVideoOperation] = useState<any>(null);
@@ -153,6 +134,8 @@ export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [viewMode, setViewMode] = useState<'auto' | 'portrait' | 'desktop'>('auto');
   
   const [showSettings, setShowSettings] = useState(false);
   const [manualApiKey, setManualApiKey] = useState('');
@@ -161,12 +144,32 @@ export default function App() {
   const productFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (mode === 'video') {
+      if (resolution !== '720p' && resolution !== '1080p') {
+        setResolution('1080p');
+      }
+    } else if (mode === 'text-to-image' || mode === 'image-to-image') {
+      if (resolution === '720p' || resolution === '1080p') {
+        setResolution('1K');
+      }
+    }
+  }, [mode]);
+
+  useEffect(() => {
     checkApiKey();
     const savedKey = localStorage.getItem('veo_manual_api_key');
     if (savedKey) setManualApiKey(savedKey);
 
+    let unsubscribeCredits: (() => void) | null = null;
+
     // Firebase Auth Listener
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Unsubscribe from previous listener if it exists
+      if (unsubscribeCredits) {
+        unsubscribeCredits();
+        unsubscribeCredits = null;
+      }
+
       setUser(firebaseUser);
       setIsAuthReady(true);
       
@@ -177,30 +180,51 @@ export default function App() {
 
         // Sync credits from Firestore
         const userDocRef = doc(db, 'users', firebaseUser.uid);
-        const userDoc = await getDoc(userDocRef);
+        
+        try {
+          const userDoc = await getDoc(userDocRef);
 
-        if (!userDoc.exists()) {
-          // Initialize new user with 60 credits
-          await setDoc(userDocRef, {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            credits: 60,
-            role: firebaseUser.email === adminEmail ? 'admin' : 'user',
-            createdAt: new Date().toISOString()
-          });
-          setCredits(60);
-        } else {
-          setCredits(userDoc.data().credits || 0);
-        }
-
-        // Listen for real-time credit updates
-        const unsubscribeCredits = onSnapshot(userDocRef, (doc) => {
-          if (doc.exists()) {
-            setCredits(doc.data().credits || 0);
+          if (!userDoc.exists()) {
+            // Initialize new user with 60 credits
+            await setDoc(userDocRef, {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              credits: 60,
+              role: firebaseUser.email === adminEmail ? 'admin' : 'user',
+              createdAt: new Date().toISOString()
+            });
+            setCredits(60);
+          } else {
+            setCredits(userDoc.data().credits || 0);
           }
-        });
 
-        return () => unsubscribeCredits();
+          // Listen for real-time credit updates
+          unsubscribeCredits = onSnapshot(userDocRef, (doc) => {
+            if (doc.exists()) {
+              setCredits(doc.data().credits || 0);
+            }
+          }, (error) => {
+            console.error("Credits snapshot error:", error);
+            // Handle permission denied gracefully
+            if (error.code === 'permission-denied') {
+              console.warn("Permission denied for credits listener. This is expected on logout.");
+            } else {
+              handleFirestoreError(error, OperationType.GET, 'users');
+            }
+          });
+        } catch (err) {
+          console.error("Error fetching user data:", err);
+          if (err instanceof Error && !err.message.includes('Firestore Error')) {
+            // If it's not already a handled firestore error, wrap it
+            try {
+              handleFirestoreError(err, OperationType.GET, 'users');
+            } catch (e) {
+              // Re-throw the wrapped error
+              throw e;
+            }
+          }
+          throw err;
+        }
       } else {
         setIsAdmin(false);
         setCredits(0);
@@ -223,6 +247,11 @@ export default function App() {
         console.error("Failed to parse history:", e);
       }
     }
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeCredits) unsubscribeCredits();
+    };
   }, []);
 
   useEffect(() => {
@@ -230,7 +259,33 @@ export default function App() {
   }, [manualApiKey]);
 
   useEffect(() => {
-    localStorage.setItem('vision_ai_history', JSON.stringify(history));
+    const saveHistory = () => {
+      try {
+        localStorage.setItem('vision_ai_history', JSON.stringify(history));
+      } catch (e) {
+        if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+          console.warn("LocalStorage quota exceeded, truncating history...");
+          // If quota exceeded, try saving only the most recent 10 items
+          if (history.length > 10) {
+            const truncated = history.slice(0, 10);
+            try {
+              localStorage.setItem('vision_ai_history', JSON.stringify(truncated));
+            } catch (innerE) {
+              console.error("Failed to save even truncated history:", innerE);
+              // Last resort: clear history from storage if it's still too big
+              localStorage.removeItem('vision_ai_history');
+            }
+          } else if (history.length > 0) {
+            // If even 10 items are too much (e.g. very large images), try saving one by one or just clear
+            localStorage.removeItem('vision_ai_history');
+          }
+        } else {
+          console.error("Failed to save history:", e);
+        }
+      }
+    };
+
+    saveHistory();
   }, [history]);
 
   const checkApiKey = async () => {
@@ -316,6 +371,40 @@ export default function App() {
     }
   };
 
+  const enhancePrompt = async () => {
+    if (!prompt.trim()) return;
+    setIsEnhancing(true);
+    try {
+      const currentApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      const ai = new GoogleGenAI({ apiKey: currentApiKey || '' });
+      
+      const enhancementPrompt = `Enhance this visual prompt for an AI video generator. 
+      Make it more descriptive, cinematic, and detailed. 
+      The style is ${animationStyle}, the camera movement is ${cameraStyle}, and the scene is ${sceneType}.
+      Keep it under 100 words. Return ONLY the enhanced prompt.
+      Original Prompt: "${prompt}"`;
+      
+      const result = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: enhancementPrompt
+      });
+
+      if (result.text) {
+        setPrompt(result.text.trim());
+      }
+    } catch (err) {
+      console.error("Enhancement error:", err);
+      setError("Failed to enhance prompt. Check your API key.");
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
+
+  const applyStylePreset = (presetPrompt: string) => {
+    if (prompt.includes(presetPrompt)) return;
+    setPrompt(prev => prev ? `${prev}, ${presetPrompt}` : presetPrompt);
+  };
+
   const generateMetadata = async (contentPrompt: string) => {
     setIsGeneratingMetadata(true);
     try {
@@ -324,7 +413,7 @@ export default function App() {
       const ai = new GoogleGenAI({ apiKey: currentApiKey });
       
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite-preview',
+        model: 'gemini-3-flash-preview',
         contents: `Based on this prompt: "${contentPrompt}", generate a catchy YouTube/Social Media title, a short engaging description, and 5 relevant hashtags. Return the result in JSON format with keys: "title", "description", "hashtags" (as a string).`,
         config: {
           responseMimeType: 'application/json'
@@ -363,7 +452,7 @@ export default function App() {
       const ai = new GoogleGenAI({ apiKey: currentApiKey || '' });
       
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-image-preview',
+        model: 'gemini-2.5-flash-image',
         contents: { parts: [{ text: `High-quality cinematic YouTube thumbnail for: ${prompt}. Style: ${animationStyle}. Vibrant colors, eye-catching composition, no text.` }] },
         config: {
           imageConfig: {
@@ -394,7 +483,7 @@ export default function App() {
       id: Math.random().toString(36).substring(2, 11),
       timestamp: Date.now(),
     };
-    setHistory(prev => [newItem, ...prev].slice(0, 50));
+    setHistory(prev => [newItem, ...prev].slice(0, 20));
   };
 
   const extendVideo = async () => {
@@ -494,15 +583,20 @@ export default function App() {
         credits: increment(-creditCost)
       });
 
-      const currentApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
-      
-      if (window.aistudio && !currentApiKey) {
+      // For Veo models, we MUST ensure a paid API key is selected via the platform dialog
+      if (window.aistudio && mode === 'video' && !manualApiKey) {
         const hasKey = await window.aistudio.hasSelectedApiKey();
         if (!hasKey) {
           await window.aistudio.openSelectKey();
+          // We return early and let the user click again once they've selected the key
+          setIsGenerating(false);
+          setStatus('');
+          return;
         }
       }
 
+      const currentApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      
       const ai = new GoogleGenAI({ apiKey: currentApiKey || '' });
 
       // Step 1: Analyze Reference Image for maximum fidelity if image exists
@@ -513,7 +607,7 @@ export default function App() {
         setStatus('Analyzing product details for 100% fidelity...');
         try {
           const analysisResponse = await ai.models.generateContent({
-            model: 'gemini-3.1-flash-preview',
+            model: 'gemini-3-flash-preview',
             contents: {
               parts: [
                 { 
@@ -547,7 +641,8 @@ export default function App() {
           ? `STRICT FIDELITY REQUIREMENT: The product in the video MUST be an IDENTICAL PIXEL-PERFECT REPLICA of the object in the reference image. Product Description: ${detailedProductDescription || 'The exact object shown in the reference image'}. Do not apply stylistic distortions to the product itself. Maintain all logos, materials, and proportions exactly.` 
           : "";
         const styleContext = `Style: ${animationStyle}. Camera: ${cameraStyle}. Scene: ${sceneType}. Lighting: ${lightingStyle}. ${characterContext} ${productContext}`;
-        const finalPrompt = `${styleContext} ${prompt} ${fidelityContext} ${enableSound ? '(Include high-quality atmospheric sound effects)' : '(Silent video)'} The product is the absolute central focus and must be visually indistinguishable from the source reference.`;
+        const upscaleContext = scaleImage ? "UPSCALE REQUIREMENT: Enhance the output to ultra-high resolution with maximum detail and clarity. Perform super-resolution upscaling while preserving all original features." : "";
+        const finalPrompt = `${styleContext} ${prompt} ${fidelityContext} ${upscaleContext} ${enableSound ? '(Include high-quality atmospheric sound effects)' : '(Silent video)'} The product is the absolute central focus and must be visually indistinguishable from the source reference.`;
 
         let operation;
         
@@ -614,7 +709,8 @@ export default function App() {
         const fidelityContext = productFidelity 
           ? `PIXEL-PERFECT FIDELITY: The product must be a 1:1 identical match to the reference image. Detailed Product Features to preserve: ${detailedProductDescription || 'All visual details from the reference'}. Zero stylistic deviation allowed for the product object.` 
           : "";
-        const parts: any[] = [{ text: `${animationStyle} style, ${sceneType} scene, ${lightingStyle} lighting, ${characterContext} ${productContext} ${prompt}. ${fidelityContext} The product must be visually indistinguishable from the reference.` }];
+        const upscaleContext = scaleImage ? "UPSCALE REQUIREMENT: Enhance the image to ultra-high resolution with maximum detail and clarity. Perform super-resolution upscaling while preserving all original features." : "";
+        const parts: any[] = [{ text: `${animationStyle} style, ${sceneType} scene, ${lightingStyle} lighting, ${characterContext} ${productContext} ${prompt}. ${fidelityContext} ${upscaleContext} The product must be visually indistinguishable from the reference.` }];
         
         // Add main reference image if it exists
         if (image) {
@@ -644,12 +740,11 @@ export default function App() {
         }
 
         const response = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-image-preview',
+          model: 'gemini-2.5-flash-image',
           contents: { parts },
           config: {
             imageConfig: {
-              aspectRatio: aspectRatio as any,
-              imageSize: resolution === '1080p' ? '1K' : '512px'
+              aspectRatio: aspectRatio as any
             }
           }
         });
@@ -753,6 +848,60 @@ export default function App() {
     }
   };
 
+  const [targetEmail, setTargetEmail] = useState('');
+  const [targetAmount, setTargetAmount] = useState(50);
+  const [adminActionLoading, setAdminActionLoading] = useState(false);
+
+  const handleAdminAddCredits = async () => {
+    if (!user || !isAdmin || !targetEmail) return;
+    setAdminActionLoading(true);
+    try {
+      // Find user by email
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('email', '==', targetEmail));
+      const querySnapshot = await getDocs(q);
+      
+      if (querySnapshot.empty) {
+        setError("User with that email not found.");
+        return;
+      }
+
+      const targetUserDoc = querySnapshot.docs[0];
+      const targetUserRef = doc(db, 'users', targetUserDoc.id);
+      
+      await updateDoc(targetUserRef, {
+        credits: increment(targetAmount)
+      });
+      
+      setTargetEmail('');
+      alert(`Successfully added ${targetAmount} credits to ${targetEmail}`);
+    } catch (err) {
+      console.error("Admin add credits error:", err);
+      setError("Failed to add credits to user.");
+    } finally {
+      setAdminActionLoading(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
+    try {
+      await loginWithGoogle();
+    } catch (err: any) {
+      if (err.code === 'auth/cancelled-popup-request') {
+        console.warn("Login popup request was cancelled by a subsequent request.");
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        console.log("User closed the login popup.");
+      } else {
+        console.error("Login error:", err);
+        setError("Failed to login with Google. Please try again.");
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
   if (apiKeySelected === false && !manualApiKey) {
     return (
       <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-6 font-sans">
@@ -811,609 +960,178 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-orange-500/30">
-      {/* Header */}
-      <header className="border-bottom border-white/5 p-6 sticky top-0 bg-[#050505]/80 backdrop-blur-xl z-50">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
-              <Video className="w-6 h-6 text-black" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight uppercase">Vision<span className="text-orange-500">AI</span></h1>
-              <p className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Multimodal Creative Suite</p>
-            </div>
-          </div>
-          
-          <nav className="hidden md:flex items-center bg-white/5 rounded-2xl p-1 border border-white/10">
-            {(['video', 'text-to-image', 'image-to-image', 'history'] as AppMode[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => {
-                  setMode(m);
-                  if (m !== 'history') {
-                    setGeneratedVideoUrl(null);
-                    setGeneratedImageUrl(null);
-                    setError(null);
-                  }
-                }}
-                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                  mode === m ? 'bg-orange-500 text-black shadow-lg shadow-orange-500/20' : 'text-white/40 hover:text-white'
-                }`}
-              >
-                {m.replace(/-/g, ' ')}
-              </button>
-            ))}
-          </nav>
+    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-orange-500/30 overflow-x-hidden">
+      {/* Background Atmosphere */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-orange-500/5 blur-[120px] rounded-full" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/5 blur-[120px] rounded-full" />
+      </div>
 
-          <div className="flex items-center gap-4">
-            {user ? (
-              <div className="flex items-center gap-3">
-                <div className="hidden sm:flex flex-col items-end">
-                  <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Logged In</span>
-                  <span className="text-xs font-bold text-white/80">{user.displayName || user.email}</span>
-                </div>
-                <button 
-                  onClick={() => logout()}
-                  className="p-2 bg-white/5 hover:bg-white/10 rounded-xl transition-all text-white/40 hover:text-red-500"
-                  title="Logout"
-                >
-                  <LogOut className="w-5 h-5" />
-                </button>
-              </div>
-            ) : (
-              <button 
-                onClick={() => loginWithGoogle()}
-                className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-black font-black text-xs rounded-xl transition-all"
-              >
-                <LogIn className="w-4 h-4" />
-                LOGIN
-              </button>
-            )}
-            <div className="flex items-center gap-2 px-3 py-2 bg-orange-500/10 rounded-xl border border-orange-500/20">
-              <Coins className="w-4 h-4 text-orange-500" />
-              <span className="text-sm font-black text-orange-500">{credits}</span>
-              {isAdmin && (
-                <button 
-                  onClick={handleTopUp}
-                  className="ml-2 px-2 py-1 bg-orange-500/20 hover:bg-orange-500/30 rounded-lg transition-colors text-[10px] font-black text-orange-500 uppercase tracking-wider"
-                >
-                  Top Up
-                </button>
-              )}
-            </div>
-            <button 
-              onClick={() => setShowSettings(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 transition-all text-xs font-bold"
+      <Header 
+        user={user} 
+        mode={mode} 
+        setMode={(m) => {
+          setMode(m);
+          if (m !== 'history') {
+            setGeneratedVideoUrl(null);
+            setGeneratedImageUrl(null);
+            setError(null);
+          }
+        }} 
+        loginWithGoogle={handleLogin} 
+        isLoggingIn={isLoggingIn}
+        logout={logout}
+        onReset={() => {
+          setMode('video');
+          setPrompt('');
+          setGeneratedVideoUrl(null);
+          setGeneratedImageUrl(null);
+          setError(null);
+        }}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        credits={credits}
+        onOpenSettings={() => setShowSettings(true)}
+      />
+
+      <SettingsModal 
+        show={showSettings}
+        onClose={() => setShowSettings(false)}
+        credits={credits}
+        isAdmin={isAdmin}
+        user={user}
+        handleTopUp={handleTopUp}
+        handleSelectKey={handleSelectKey}
+        manualApiKey={manualApiKey}
+        setManualApiKey={setManualApiKey}
+        handleSaveManualKey={handleSaveManualKey}
+        handleClearKeys={handleClearKeys}
+        targetEmail={targetEmail}
+        setTargetEmail={setTargetEmail}
+        targetAmount={targetAmount}
+        setTargetAmount={setTargetAmount}
+        handleAdminAddCredits={handleAdminAddCredits}
+        adminActionLoading={adminActionLoading}
+      />
+
+      <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 relative z-20">
+        <AnimatePresence mode="wait">
+          {mode === 'history' ? (
+            <motion.div
+              key="history"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
             >
-              <Settings className="w-4 h-4" />
-              API SETTINGS
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Settings Modal */}
-      <AnimatePresence>
-        {showSettings && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowSettings(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-md bg-[#111] border border-white/10 rounded-3xl p-8 space-y-6 shadow-2xl"
-            >
-              <h2 className="text-xl font-bold">API Key & Credits</h2>
-              
-              <div className="space-y-4">
-                <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-2xl space-y-2">
-                  <p className="text-xs text-orange-500 font-bold uppercase tracking-wider">Credit Info</p>
-                  <p className="text-sm text-white/60">
-                    {isAdmin 
-                      ? "You are an Admin. You can top up credits for testing." 
-                      : "Credits are now managed via your account. Login to sync your balance."}
-                  </p>
-                  <div className="flex items-center gap-2 pt-2">
-                    <Coins className="w-4 h-4 text-orange-500" />
-                    <span className="text-sm font-black text-white">{credits} Credits Available</span>
-                  </div>
-                  {!user && (
-                    <p className="text-[10px] text-red-400 font-bold uppercase">Login required to see credits</p>
-                  )}
-                </div>
-
-                {isAdmin && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-bold text-white/40 uppercase tracking-widest">Admin Controls</p>
-                    <button
-                      onClick={handleTopUp}
-                      className="w-full bg-orange-500 hover:bg-orange-600 text-black font-black py-3 rounded-xl transition-all flex items-center justify-center gap-2"
-                    >
-                      <Coins className="w-4 h-4" />
-                      TOP UP +50 CREDITS (ADMIN ONLY)
-                    </button>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <p className="text-xs font-bold text-white/40 uppercase tracking-widest">Platform Selection</p>
-                  <button
-                    onClick={handleSelectKey}
-                    className="w-full bg-orange-500 hover:bg-orange-600 text-black font-bold py-3 rounded-xl transition-all"
-                  >
-                    Select Paid Key (Recommended)
-                  </button>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-xs font-bold text-white/40 uppercase tracking-widest">Manual Input</p>
-                  <input 
-                    type="password"
-                    value={manualApiKey}
-                    onChange={(e) => setManualApiKey(e.target.value)}
-                    placeholder="Enter API Key manually..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500/50"
-                  />
-                  <button
-                    onClick={handleSaveManualKey}
-                    className="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl transition-all"
-                  >
-                    Save Manual Key
-                  </button>
-                </div>
-
-                <div className="pt-4 border-t border-white/5">
-                  <button
-                    onClick={handleClearKeys}
-                    className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold py-3 rounded-xl transition-all text-xs"
-                  >
-                    RESET ALL API KEYS
-                  </button>
-                </div>
-              </div>
-
-              <button 
-                onClick={() => setShowSettings(false)}
-                className="w-full py-2 text-xs text-white/40 hover:text-white transition-colors"
-              >
-                Close Settings
-              </button>
+              <HistoryView 
+                history={history} 
+                onDelete={(id) => setHistory(prev => prev.filter(h => h.id !== id))} 
+                onReopen={(item) => {
+                  setMode('video');
+                  setGeneratedVideoUrl(item.url);
+                  setLastVideoOperation(item.operation);
+                  setPrompt(item.prompt);
+                }} 
+              />
             </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-      <main className="max-w-7xl mx-auto p-6">
-        {mode === 'history' ? (
-          <div className="space-y-8">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <h2 className="text-2xl font-black tracking-tight uppercase">Generation <span className="text-orange-500">History</span></h2>
-                <p className="text-xs text-white/40 font-bold uppercase tracking-widest">Your creative journey, archived.</p>
-              </div>
-              <button 
-                onClick={() => setHistory([])}
-                className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+          ) : (
+            <motion.div
+              key="generator"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className={`grid gap-8 ${
+                viewMode === 'desktop' ? 'grid-cols-12' : 
+                viewMode === 'portrait' ? 'grid-cols-1' : 
+                'grid-cols-1 lg:grid-cols-12'
+              }`}
+            >
+              {/* Login Banner */}
+              {!user && (
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`${
+                  viewMode === 'desktop' ? 'col-span-12' : 
+                  viewMode === 'portrait' ? 'col-span-1' : 
+                  'lg:col-span-12'
+                } p-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[32px] flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl relative overflow-hidden group`}
               >
-                Clear All
-              </button>
-            </div>
-
-            {history.length === 0 ? (
-              <div className="h-[60vh] flex flex-col items-center justify-center gap-4 bg-[#111] rounded-3xl border border-white/5 border-dashed">
-                <History className="w-12 h-12 text-white/10" />
-                <p className="text-white/20 font-bold uppercase tracking-widest text-sm">No generations found yet.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {history.map((item) => (
-                  <motion.div 
-                    layout
-                    key={item.id}
-                    className="group bg-[#111] border border-white/10 rounded-3xl overflow-hidden hover:border-orange-500/30 transition-all"
-                  >
-                    <div className="aspect-video relative bg-black flex items-center justify-center">
-                      {item.type === 'video' ? (
-                        item.url ? (
-                          <video 
-                            key={item.url}
-                            src={item.url} 
-                            className="w-full h-full object-cover"
-                            onMouseOver={(e) => e.currentTarget.play()}
-                            onMouseOut={(e) => e.currentTarget.pause()}
-                            muted
-                            loop
-                            playsInline
-                          />
-                        ) : (
-                          <div className="flex flex-col items-center gap-2 text-white/20 p-4 text-center">
-                            <AlertCircle className="w-8 h-8" />
-                            <p className="text-[10px] font-bold uppercase tracking-widest">Video Expired</p>
-                            <p className="text-[8px] opacity-50">Blob URLs are session-only. Download videos to keep them.</p>
-                          </div>
-                        )
-                      ) : (
-                        <img src={item.url} alt={item.prompt} className="w-full h-full object-cover" />
-                      )}
-                      <div className="absolute top-3 right-3 flex gap-2">
-                        <button 
-                          onClick={() => {
-                            const a = document.createElement('a');
-                            a.href = item.url;
-                            a.download = `${item.type}-${item.id}.${item.type === 'video' ? 'mp4' : 'jpg'}`;
-                            a.click();
-                          }}
-                          className="p-2 bg-black/60 backdrop-blur-md rounded-lg text-white/60 hover:text-white transition-colors"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                        <button 
-                          onClick={() => setHistory(prev => prev.filter(h => h.id !== item.id))}
-                          className="p-2 bg-black/60 backdrop-blur-md rounded-lg text-white/60 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="absolute bottom-3 left-3">
-                        <span className="px-2 py-1 bg-orange-500 text-black text-[8px] font-black uppercase rounded-md">
-                          {item.type}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="p-4 space-y-2">
-                      <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">
-                        {new Date(item.timestamp).toLocaleDateString()} • {new Date(item.timestamp).toLocaleTimeString()}
-                      </p>
-                      <p className="text-xs text-white/80 line-clamp-2 font-medium leading-relaxed">
-                        {item.prompt}
-                      </p>
-                      {item.type === 'video' && item.operation && (
-                        <button 
-                          onClick={() => {
-                            setMode('video');
-                            setGeneratedVideoUrl(item.url);
-                            setLastVideoOperation(item.operation);
-                            setPrompt(item.prompt);
-                          }}
-                          className="w-full mt-2 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
-                        >
-                          Re-open in Editor
-                        </button>
-                      )}
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* Login Banner */}
-            {!user && (
-              <div className="lg:col-span-12 p-4 bg-orange-500/10 border border-orange-500/20 rounded-2xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <UserCircle2 className="w-5 h-5 text-orange-500" />
-                  <p className="text-sm font-medium">Login to start generating and sync your credits.</p>
+                <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 via-transparent to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
+                <div className="flex items-center gap-4 relative z-10">
+                  <div className="w-12 h-12 rounded-2xl bg-orange-500/20 flex items-center justify-center">
+                    <UserCircle2 className="w-6 h-6 text-orange-500" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold">Unlock Full Potential</h3>
+                    <p className="text-sm text-white/40">Login to start generating, sync your history, and manage credits.</p>
+                  </div>
                 </div>
                 <button 
-                  onClick={() => loginWithGoogle()}
-                  className="px-4 py-2 bg-orange-500 text-black font-black text-xs rounded-xl"
+                  onClick={handleLogin}
+                  disabled={isLoggingIn}
+                  className="relative z-10 px-8 py-3 bg-orange-500 text-black font-black text-xs rounded-2xl hover:bg-orange-600 transition-all active:scale-95 shadow-[0_0_20px_rgba(249,115,22,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  LOGIN NOW
+                  {isLoggingIn ? 'LOGGING IN...' : 'LOGIN WITH GOOGLE'}
                 </button>
-              </div>
+              </motion.div>
             )}
             {/* Controls Column */}
-            <div className="lg:col-span-5 space-y-8">
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-white/60">
-                <Type className="w-4 h-4" />
-                <h2 className="text-xs font-bold uppercase tracking-widest">Prompt Configuration</h2>
-              </div>
-              <button 
-                onClick={generatePromptIdea}
-                disabled={isSuggesting || isGenerating}
-                className="flex items-center gap-2 px-3 py-1 bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 rounded-lg border border-orange-500/20 transition-all text-[10px] font-bold uppercase tracking-wider"
-              >
-                {isSuggesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                Magic Suggest
-              </button>
-            </div>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Describe your video vision... (Supports plain text or JSON format)"
-              className="w-full h-32 bg-[#111] border border-white/10 rounded-2xl p-4 text-sm focus:outline-none focus:border-orange-500/50 transition-colors resize-none placeholder:text-white/20"
-            />
-          </section>
+            <div className={`${
+              viewMode === 'desktop' ? 'col-span-5' : 
+              viewMode === 'portrait' ? 'col-span-1' : 
+              'lg:col-span-5'
+            } space-y-8 relative z-30`}>
+          <PromptConfiguration 
+            prompt={prompt}
+            setPrompt={setPrompt}
+            isEnhancing={isEnhancing}
+            isSuggesting={isSuggesting}
+            isGenerating={isGenerating}
+            enhancePrompt={enhancePrompt}
+            generatePromptIdea={generatePromptIdea}
+            applyStylePreset={applyStylePreset}
+          />
 
-          <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-white/40">
-                <Palette className="w-3 h-3" />
-                <h2 className="text-[10px] font-bold uppercase tracking-widest">Style</h2>
-              </div>
-              <select 
-                value={animationStyle}
-                onChange={(e) => setAnimationStyle(e.target.value)}
-                className="w-full bg-[#111] border border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-orange-500/50 appearance-none cursor-pointer"
-              >
-                {ANIMATION_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-white/40">
-                <Camera className="w-3 h-3" />
-                <h2 className="text-[10px] font-bold uppercase tracking-widest">Camera</h2>
-              </div>
-              <select 
-                value={cameraStyle}
-                onChange={(e) => setCameraStyle(e.target.value)}
-                className="w-full bg-[#111] border border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-orange-500/50 appearance-none cursor-pointer"
-              >
-                {CAMERA_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-white/40">
-                <Layout className="w-3 h-3" />
-                <h2 className="text-[10px] font-bold uppercase tracking-widest">Scene</h2>
-              </div>
-              <select 
-                value={sceneType}
-                onChange={(e) => setSceneType(e.target.value)}
-                className="w-full bg-[#111] border border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-orange-500/50 appearance-none cursor-pointer"
-              >
-                {SCENE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-white/40">
-                <Sparkles className="w-3 h-3" />
-                <h2 className="text-[10px] font-bold uppercase tracking-widest">Lighting</h2>
-              </div>
-              <select 
-                value={lightingStyle}
-                onChange={(e) => setLightingStyle(e.target.value)}
-                className="w-full bg-[#111] border border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-orange-500/50 appearance-none cursor-pointer"
-              >
-                {LIGHTING_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-          </section>
-
-          {/* Character Model Selection */}
-          <section className="space-y-4">
-            <div className="flex items-center gap-2 text-white/60">
-              <UserCircle2 className="w-4 h-4" />
-              <h2 className="text-xs font-bold uppercase tracking-widest">Character Configuration</h2>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              {(['none', 'male', 'female'] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setCharacterModel(m)}
-                  className={`py-3 rounded-2xl text-[10px] font-bold border transition-all flex flex-col items-center gap-2 ${
-                    characterModel === m 
-                      ? 'bg-orange-500 border-orange-500 text-black' 
-                      : 'bg-[#111] border-white/10 text-white/60 hover:border-white/20'
-                  }`}
-                >
-                  {m === 'none' && <RefreshCw className="w-4 h-4" />}
-                  {m === 'male' && <User className="w-4 h-4" />}
-                  {m === 'female' && <User className="w-4 h-4" />}
-                  <span className="capitalize">{m === 'none' ? 'Default' : `Realistic ${m}`}</span>
-                </button>
-              ))}
-            </div>
-            
-            {characterModel !== 'none' && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold uppercase text-white/40">Age Group</p>
-                  <select 
-                    value={characterAge}
-                    onChange={(e) => setCharacterAge(e.target.value)}
-                    className="w-full bg-[#111] border border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-orange-500/50 appearance-none cursor-pointer"
-                  >
-                    {CHARACTER_AGES.map(a => <option key={a} value={a}>{a}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold uppercase text-white/40">Pose / Action</p>
-                  <select 
-                    value={characterPose}
-                    onChange={(e) => setCharacterPose(e.target.value)}
-                    className="w-full bg-[#111] border border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-orange-500/50 appearance-none cursor-pointer"
-                  >
-                    {CHARACTER_POSES.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* Product Management */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-white/60">
-                <ShoppingBag className="w-4 h-4" />
-                <h2 className="text-xs font-bold uppercase tracking-widest">Product Catalog</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase text-white/40">Auto Add</span>
-                <button 
-                  onClick={() => setAutoAddProduct(!autoAddProduct)}
-                  className={`w-8 h-4 rounded-full transition-colors relative ${autoAddProduct ? 'bg-orange-500' : 'bg-white/10'}`}
-                >
-                  <motion.div 
-                    animate={{ x: autoAddProduct ? 18 : 2 }}
-                    className="absolute top-0.5 w-3 h-3 bg-white rounded-full shadow-lg"
-                  />
-                </button>
-              </div>
-            </div>
-            
-            <div className="space-y-3">
-              <div className="flex gap-2 items-center">
-                <div 
-                  onClick={() => productFileInputRef.current?.click()}
-                  className={`w-10 h-10 rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer transition-all overflow-hidden flex-shrink-0 ${
-                    newProductImage ? 'border-orange-500/50' : 'border-white/10 hover:border-white/20'
-                  }`}
-                >
-                  {newProductImage ? (
-                    <img src={newProductImage} alt="New Product" className="w-full h-full object-cover" />
-                  ) : (
-                    <Upload className="w-4 h-4 text-white/20" />
-                  )}
-                </div>
-                <input 
-                  type="file"
-                  ref={productFileInputRef}
-                  onChange={handleProductImageUpload}
-                  className="hidden"
-                  accept="image/*"
-                />
-                <input 
-                  type="text"
-                  value={newProduct}
-                  onChange={(e) => setNewProduct(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && addProduct()}
-                  placeholder="Add product name (e.g. Luxury Watch)"
-                  className="flex-1 bg-[#111] border border-white/10 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-orange-500/50"
-                />
-                <button 
-                  onClick={addProduct}
-                  className="p-2 bg-orange-500 text-black rounded-xl hover:bg-orange-600 transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                {products.map((p, i) => (
-                  <div 
-                    key={i} 
-                    onClick={() => p.image && setImage(p.image)}
-                    className={`flex items-center gap-3 p-2 bg-white/5 border rounded-2xl group cursor-pointer transition-all ${
-                      image === p.image ? 'border-orange-500 bg-orange-500/5' : 'border-white/10 hover:border-white/20'
-                    }`}
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-black overflow-hidden flex-shrink-0">
-                      {p.image ? (
-                        <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-[8px] text-white/20 font-black">N/A</div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[10px] font-bold text-white/80 truncate">{p.name}</p>
-                      {image === p.image && <p className="text-[8px] text-orange-500 font-black uppercase">Active Ref</p>}
-                    </div>
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeProduct(i);
-                      }}
-                      className="text-white/20 hover:text-red-500 transition-colors p-1"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-                {products.length === 0 && (
-                  <p className="text-[10px] text-white/20 italic col-span-2">No products added yet.</p>
-                )}
-              </div>
-            </div>
-          </section>
-
-          {mode !== 'text-to-image' && (
-            <section className="space-y-4">
-              <div className="flex items-center gap-2 text-white/60">
-                <ImageIcon className="w-4 h-4" />
-                <h2 className="text-xs font-bold uppercase tracking-widest">Reference Image</h2>
-              </div>
-              <div 
-                onClick={() => fileInputRef.current?.click()}
-                className={`relative group cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed transition-all ${
-                  image ? 'border-orange-500/50' : 'border-white/10 hover:border-white/20'
-                }`}
-              >
-                {image ? (
-                  <div className="relative aspect-video">
-                    <img src={image} alt="Reference" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <p className="text-xs font-bold">Change Image</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="aspect-video flex flex-col items-center justify-center gap-3 bg-[#111]">
-                    <Upload className="w-8 h-8 text-white/20 group-hover:text-white/40 transition-colors" />
-                    <p className="text-xs text-white/40 font-medium">Click to upload reference image</p>
-                  </div>
-                )}
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleImageUpload} 
-                  className="hidden" 
-                  accept="image/*"
-                />
-              </div>
-            </section>
-          )}
-
-          <section className="grid grid-cols-2 gap-4">
-            <div className="space-y-3">
-              <h2 className="text-[10px] font-bold uppercase tracking-widest text-white/40">Aspect Ratio</h2>
-              <div className="flex flex-wrap gap-2">
-                {(mode === 'video' ? ['16:9', '9:16'] : ['1:1', '16:9', '9:16', '4:3', '3:4'] as AspectRatio[]).map((ratio) => (
-                  <button
-                    key={ratio}
-                    onClick={() => setAspectRatio(ratio)}
-                    className={`px-3 py-2 rounded-xl text-[10px] font-bold border transition-all ${
-                      aspectRatio === ratio 
-                        ? 'bg-orange-500 border-orange-500 text-black' 
-                        : 'bg-white/5 border-white/10 text-white/60 hover:border-white/20'
-                    }`}
-                  >
-                    {ratio}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-3">
-              <h2 className="text-[10px] font-bold uppercase tracking-widest text-white/40">Quality</h2>
-              <div className="flex gap-2">
-                {(mode === 'video' ? ['720p', '1080p'] : ['1K', '2K'] as Resolution[]).map((res) => (
-                  <button
-                    key={res}
-                    onClick={() => setResolution(res)}
-                    className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
-                      resolution === res 
-                        ? 'bg-orange-500 border-orange-500 text-black' 
-                        : 'bg-white/5 border-white/10 text-white/60 hover:border-white/20'
-                    }`}
-                  >
-                    {res}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
+          <Controls 
+            characterModel={characterModel}
+            setCharacterModel={setCharacterModel}
+            characterAge={characterAge}
+            setCharacterAge={setCharacterAge}
+            characterPose={characterPose}
+            setCharacterPose={setCharacterPose}
+            products={products}
+            newProduct={newProduct}
+            setNewProduct={setNewProduct}
+            newProductImage={newProductImage}
+            productFileInputRef={productFileInputRef}
+            handleProductImageUpload={handleProductImageUpload}
+            addProduct={addProduct}
+            removeProduct={removeProduct}
+            autoAddProduct={autoAddProduct}
+            setAutoAddProduct={setAutoAddProduct}
+            image={image}
+            setImage={setImage}
+            fileInputRef={fileInputRef}
+            handleImageUpload={handleImageUpload}
+            aspectRatio={aspectRatio}
+            setAspectRatio={setAspectRatio}
+            animationStyle={animationStyle}
+            setAnimationStyle={setAnimationStyle}
+            cameraStyle={cameraStyle}
+            setCameraStyle={setCameraStyle}
+            sceneType={sceneType}
+            setSceneType={setSceneType}
+            lightingStyle={lightingStyle}
+            setLightingStyle={setLightingStyle}
+            resolution={resolution}
+            setResolution={setResolution}
+            mode={mode}
+          />
 
           {mode === 'video' && (
             <div className="space-y-4">
-              <section className="flex items-center justify-between p-4 bg-[#111] rounded-2xl border border-white/10">
+              <section className="flex items-center justify-between p-4 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10">
                 <div className="flex items-center gap-3">
                   <Sparkles className="w-5 h-5 text-orange-500" />
                   <div>
@@ -1423,7 +1141,7 @@ export default function App() {
                 </div>
                 <button 
                   onClick={() => setProductFidelity(!productFidelity)}
-                  className={`w-12 h-6 rounded-full transition-colors relative ${productFidelity ? 'bg-orange-500' : 'bg-white/10'}`}
+                  className={`w-12 h-6 rounded-full transition-colors relative ${productFidelity ? 'bg-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.4)]' : 'bg-white/10'}`}
                 >
                   <motion.div 
                     animate={{ x: productFidelity ? 26 : 4 }}
@@ -1432,7 +1150,7 @@ export default function App() {
                 </button>
               </section>
 
-              <section className="flex items-center justify-between p-4 bg-[#111] rounded-2xl border border-white/10">
+              <section className="flex items-center justify-between p-4 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10">
                 <div className="flex items-center gap-3">
                   {enableSound ? <Volume2 className="w-5 h-5 text-orange-500" /> : <VolumeX className="w-5 h-5 text-white/20" />}
                   <div>
@@ -1442,7 +1160,7 @@ export default function App() {
                 </div>
                 <button 
                   onClick={() => setEnableSound(!enableSound)}
-                  className={`w-12 h-6 rounded-full transition-colors relative ${enableSound ? 'bg-orange-500' : 'bg-white/10'}`}
+                  className={`w-12 h-6 rounded-full transition-colors relative ${enableSound ? 'bg-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.4)]' : 'bg-white/10'}`}
                 >
                   <motion.div 
                     animate={{ x: enableSound ? 26 : 4 }}
@@ -1453,19 +1171,51 @@ export default function App() {
             </div>
           )}
 
+          <section className="flex items-center justify-between p-4 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 mb-4">
+            <div className="flex items-center gap-3">
+              <Maximize2 className="w-5 h-5 text-orange-500" />
+              <div>
+                <p className="text-sm font-bold">Scale Image (Upscale)</p>
+                <p className="text-[10px] text-white/40">Enhance resolution and detail</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setScaleImage(!scaleImage)}
+              className={`w-12 h-6 rounded-full transition-colors relative ${scaleImage ? 'bg-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.4)]' : 'bg-white/10'}`}
+            >
+              <motion.div 
+                animate={{ x: scaleImage ? 26 : 4 }}
+                className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg"
+              />
+            </button>
+          </section>
+
           <button
-            onClick={handleVideoGenerate}
-            disabled={isGenerating || !user}
-            className={`w-full py-5 rounded-2xl font-black text-lg tracking-tight transition-all flex items-center justify-center gap-3 ${
-              isGenerating || !user
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleVideoGenerate();
+            }}
+            disabled={isGenerating}
+            className={`w-full py-5 rounded-2xl font-black text-lg tracking-tight transition-all flex items-center justify-center gap-3 relative group overflow-hidden cursor-pointer z-40 touch-manipulation ${
+              isGenerating
                 ? 'bg-white/5 text-white/20 cursor-not-allowed' 
-                : 'bg-orange-500 hover:bg-orange-600 text-black shadow-xl shadow-orange-500/20 active:scale-[0.98]'
+                : !user
+                  ? 'bg-white/10 text-white/40 hover:bg-white/20 border border-white/10'
+                  : 'bg-orange-500 hover:bg-orange-400 text-black shadow-2xl shadow-orange-500/40 active:scale-[0.98]'
             }`}
           >
+            {!isGenerating && user && (
+              <motion.div 
+                animate={{ opacity: [0.2, 0.5, 0.2] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"
+              />
+            )}
             {isGenerating ? (
               <>
                 <Loader2 className="w-6 h-6 animate-spin" />
-                GENERATING...
+                <span className="animate-pulse">GENERATING...</span>
               </>
             ) : (
               <>
@@ -1491,8 +1241,12 @@ export default function App() {
         </div>
 
         {/* Output Column */}
-        <div className="lg:col-span-7">
-          <div className="sticky top-28 space-y-6">
+        <div className={`${
+          viewMode === 'desktop' ? 'col-span-7' : 
+          viewMode === 'portrait' ? 'col-span-1' : 
+          'lg:col-span-7'
+        }`}>
+          <div className={`${viewMode === 'desktop' || (viewMode === 'auto' && window.innerWidth >= 1024) ? 'sticky top-28' : ''} space-y-6`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-white/60">
                 <Maximize2 className="w-4 h-4" />
@@ -1510,55 +1264,98 @@ export default function App() {
               )}
             </div>
 
-            <div className={`relative w-full rounded-3xl overflow-hidden border border-white/10 bg-[#111] transition-all ${
-              aspectRatio === '16:9' ? 'aspect-video' : 
+            <div className={`relative rounded-[32px] overflow-hidden bg-white/5 border border-white/10 backdrop-blur-xl shadow-2xl group ${
               aspectRatio === '9:16' ? 'aspect-[9/16] max-w-[400px] mx-auto' :
-              aspectRatio === '4:3' ? 'aspect-[4/3]' :
+              aspectRatio === '16:9' ? 'aspect-video w-full' :
+              aspectRatio === '4:3' ? 'aspect-[4/3] w-full' :
               aspectRatio === '3:4' ? 'aspect-[3/4] max-w-[450px] mx-auto' :
-              'aspect-square max-w-[500px] mx-auto'
+              'aspect-square w-full'
             }`}>
-              {generatedVideoUrl ? (
-                <video 
-                  key={generatedVideoUrl}
-                  src={generatedVideoUrl} 
-                  controls 
-                  autoPlay 
-                  loop 
-                  muted
-                  playsInline
-                  className="w-full h-full object-contain"
-                  onError={(e) => {
-                    console.error("Video error:", e);
-                    setError("The generated video could not be loaded. Please try downloading it or generating again.");
-                  }}
-                />
-              ) : generatedImageUrl ? (
-                <img 
-                  src={generatedImageUrl} 
-                  alt="Generated" 
-                  className="w-full h-full object-contain"
-                />
-              ) : isGenerating ? (
-                <div className="w-full h-full flex flex-col items-center justify-center gap-6 p-12 text-center">
-                  <div className="relative">
-                    <div className="w-24 h-24 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin" />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      {mode === 'video' ? <Video className="w-8 h-8 text-orange-500 animate-pulse" /> : <ImageIcon className="w-8 h-8 text-orange-500 animate-pulse" />}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-lg font-bold tracking-tight">{status}</p>
-                    <p className="text-xs text-white/40 max-w-xs mx-auto">
-                      {mode === 'video' ? 'Veo 3.1 is crafting your cinematic experience.' : 'Gemini 3.1 is painting your vision.'} High-quality synthesis takes time.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-white/10">
-                  {mode === 'video' ? <Video className="w-16 h-16" /> : <ImageIcon className="w-16 h-16" />}
-                  <p className="text-sm font-bold uppercase tracking-widest">Ready to generate</p>
-                </div>
-              )}
+              {/* Preview Content */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <AnimatePresence mode="wait">
+                  {isGenerating ? (
+                    <motion.div 
+                      key="loading"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="flex flex-col items-center gap-6"
+                    >
+                      <div className="relative">
+                        <motion.div 
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                          className="w-24 h-24 rounded-full border-t-2 border-r-2 border-orange-500/50"
+                        />
+                        <motion.div 
+                          animate={{ rotate: -360 }}
+                          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                          className="absolute inset-2 rounded-full border-b-2 border-l-2 border-blue-500/50"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Sparkles className="w-8 h-8 text-orange-500 animate-pulse" />
+                        </div>
+                      </div>
+                      <div className="text-center space-y-2">
+                        <p className="text-sm font-black uppercase tracking-[0.3em] text-orange-500">Processing</p>
+                        <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">Synthesizing Neural Visuals</p>
+                      </div>
+                    </motion.div>
+                  ) : generatedVideoUrl ? (
+                    <motion.div 
+                      key="video"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="w-full h-full relative"
+                    >
+                      <video 
+                        src={generatedVideoUrl || null} 
+                        controls 
+                        autoPlay 
+                        loop 
+                        className="w-full h-full object-cover"
+                      />
+                    </motion.div>
+                  ) : generatedImageUrl ? (
+                    <motion.div 
+                      key="image"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="w-full h-full relative"
+                    >
+                      <img 
+                        src={generatedImageUrl || null} 
+                        alt="Generated" 
+                        className="w-full h-full object-cover"
+                      />
+                    </motion.div>
+                  ) : (
+                    <motion.div 
+                      key="empty"
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="flex flex-col items-center gap-6 text-white/5"
+                    >
+                      <div className="relative">
+                        <div className="w-24 h-24 rounded-full border-2 border-dashed border-white/10 flex items-center justify-center animate-[spin_20s_linear_infinite]">
+                          <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-orange-500/10 to-blue-500/10 blur-xl" />
+                        </div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <ImageIcon className="w-10 h-10 opacity-20" />
+                        </div>
+                      </div>
+                      <div className="text-center space-y-2">
+                        <p className="text-sm font-black uppercase tracking-[0.3em] opacity-20">Awaiting Generation</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-10">Neural Engine Ready</p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Glass Overlay for Controls */}
+              <div className="absolute inset-0 pointer-events-none border border-white/5 rounded-[32px] shadow-inner" />
             </div>
 
             <AnimatePresence>
@@ -1567,13 +1364,13 @@ export default function App() {
                   <motion.div 
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="p-6 bg-green-500/10 border border-green-500/20 rounded-3xl flex items-center gap-4"
+                    className="p-6 bg-green-500/5 backdrop-blur-md border border-green-500/20 rounded-[32px] flex items-center gap-4 shadow-xl"
                   >
-                    <div className="w-12 h-12 bg-green-500 rounded-2xl flex items-center justify-center shrink-0">
-                      <CheckCircle2 className="w-6 h-6 text-black" />
+                    <div className="w-12 h-12 bg-green-500/20 rounded-2xl flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="w-6 h-6 text-green-500" />
                     </div>
                     <div>
-                      <h3 className="font-bold">Generation Successful</h3>
+                      <h3 className="font-bold text-green-500">Generation Successful</h3>
                       <p className="text-xs text-white/60">Your {mode.replace(/-/g, ' ')} is ready for playback and download.</p>
                     </div>
                   </motion.div>
@@ -1583,7 +1380,7 @@ export default function App() {
                       <button 
                         onClick={extendVideo}
                         disabled={isExtending}
-                        className="flex-1 py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                        className="flex-1 py-4 glass-button text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         {isExtending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                         {isExtending ? 'Extending...' : 'Extend +7s'}
@@ -1592,7 +1389,7 @@ export default function App() {
                     <a 
                       href={generatedVideoUrl || generatedImageUrl || ''} 
                       download={mode === 'video' ? "vision-ai-video.mp4" : "vision-ai-image.png"}
-                      className="flex-1 py-4 bg-orange-500 hover:bg-orange-600 text-black rounded-2xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-xl shadow-orange-500/20"
+                      className="flex-1 py-4 bg-orange-500 hover:bg-orange-600 text-black rounded-2xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(249,115,22,0.3)] active:scale-[0.98]"
                     >
                       <Download className="w-4 h-4" />
                       Download {mode === 'video' ? 'MP4' : 'PNG'}
@@ -1652,7 +1449,7 @@ export default function App() {
                       {generatedThumbnailUrl ? (
                         <div className="space-y-4">
                           <div className="aspect-video rounded-2xl overflow-hidden border border-white/10">
-                            <img src={generatedThumbnailUrl} alt="Thumbnail" className="w-full h-full object-cover" />
+                            <img src={generatedThumbnailUrl || null} alt="Thumbnail" className="w-full h-full object-cover" />
                           </div>
                           <a 
                             href={generatedThumbnailUrl} 
@@ -1673,9 +1470,10 @@ export default function App() {
             </AnimatePresence>
           </div>
         </div>
-      </div>
+      </motion.div>
     )}
-    </main>
+  </AnimatePresence>
+</main>
 
       {/* Footer */}
       <footer className="max-w-7xl mx-auto p-12 border-t border-white/5 text-center space-y-4">
