@@ -1,4 +1,4 @@
-export type AppMode = 'video' | 'text-to-image' | 'image-to-image' | 'history';
+export type AppMode = 'video' | 'text-to-image' | 'image-to-image' | 'history' | 'admin';
 export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
 export type CharacterModel = 'none' | 'male' | 'female';
 

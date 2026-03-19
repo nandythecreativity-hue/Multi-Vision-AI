@@ -84,6 +84,7 @@ import { HistoryView } from './components/HistoryView';
 import { PromptConfiguration } from './components/PromptConfiguration';
 import { SettingsModal } from './components/SettingsModal';
 import { Controls } from './components/Controls';
+import { AdminDashboard } from './components/AdminDashboard';
 
 type Resolution = '720p' | '1080p' | '1K' | '2K' | '4K';
 
@@ -981,6 +982,7 @@ export default function App() {
         loginWithGoogle={handleLogin} 
         isLoggingIn={isLoggingIn}
         logout={logout}
+        isAdmin={isAdmin}
         onReset={() => {
           setMode('video');
           setPrompt('');
@@ -1016,7 +1018,16 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 relative z-20">
         <AnimatePresence mode="wait">
-          {mode === 'history' ? (
+          {mode === 'admin' && isAdmin ? (
+            <motion.div
+              key="admin"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <AdminDashboard />
+            </motion.div>
+          ) : mode === 'history' ? (
             <motion.div
               key="history"
               initial={{ opacity: 0, y: 20 }}

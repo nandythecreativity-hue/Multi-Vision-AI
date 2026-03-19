@@ -16,6 +16,7 @@ interface HeaderProps {
   setViewMode: (mode: 'auto' | 'portrait' | 'desktop') => void;
   credits: number;
   onOpenSettings: () => void;
+  isAdmin: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
@@ -29,8 +30,12 @@ export const Header: React.FC<HeaderProps> = ({
   viewMode,
   setViewMode,
   credits,
-  onOpenSettings
+  onOpenSettings,
+  isAdmin
 }) => {
+  const modes: AppMode[] = ['video', 'text-to-image', 'image-to-image', 'history'];
+  if (isAdmin) modes.push('admin');
+
   return (
     <header className="border-b border-white/5 p-3 sm:p-6 sticky top-0 bg-[#050505]/60 backdrop-blur-2xl z-50">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
@@ -51,7 +56,7 @@ export const Header: React.FC<HeaderProps> = ({
         </motion.div>
         
         <nav className="flex items-center bg-white/5 rounded-xl lg:rounded-2xl p-0.5 lg:p-1 border border-white/10 backdrop-blur-md overflow-x-auto no-scrollbar flex-1 justify-center min-w-0">
-          {(['video', 'text-to-image', 'image-to-image', 'history'] as AppMode[]).map((m) => (
+          {modes.map((m) => (
             <button
               key={m}
               onClick={() => setMode(m)}
