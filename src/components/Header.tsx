@@ -37,37 +37,38 @@ export const Header: React.FC<HeaderProps> = ({
   if (isAdmin) modes.push('admin');
 
   return (
-    <header className="border-b border-white/5 p-3 sm:p-6 sticky top-0 bg-[#050505]/60 backdrop-blur-2xl z-50">
+    <header className="border-b border-white/5 p-3 sm:p-4 sticky top-0 bg-[#050505]/60 backdrop-blur-2xl z-40">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
+        {/* Mobile Logo Only */}
         <motion.div 
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="flex items-center gap-2 lg:gap-3 cursor-pointer shrink-0"
+          className="flex lg:hidden items-center gap-2 cursor-pointer shrink-0"
           onClick={onReset}
         >
-          <div className="w-8 h-8 lg:w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-600 rounded-lg lg:rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20 relative group overflow-hidden">
-            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-            <Video className="w-4 h-4 lg:w-6 h-6 text-black relative z-10" />
+          <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-orange-600 rounded-lg flex items-center justify-center shadow-lg shadow-orange-500/20">
+            <Video className="w-4 h-4 text-black" />
           </div>
-          <div className="hidden sm:block">
-            <h1 className="text-base lg:text-xl font-black tracking-tighter uppercase leading-none">Vision<span className="text-orange-500">AI</span></h1>
-            <p className="text-[7px] lg:text-[9px] uppercase tracking-[0.2em] text-white/30 font-bold mt-1">Creative Suite Pro</p>
+          <div>
+            <p className="text-[6px] font-black text-orange-500/50 uppercase tracking-[0.2em]">Creator : Nandiarzhanka</p>
+            <h1 className="text-sm font-black tracking-tighter uppercase leading-none">Vision<span className="text-orange-500">AI</span></h1>
           </div>
         </motion.div>
         
-        <nav className="flex items-center bg-white/5 rounded-xl lg:rounded-2xl p-0.5 lg:p-1 border border-white/10 backdrop-blur-md overflow-x-auto no-scrollbar flex-1 justify-center min-w-0">
+        {/* Mobile Navigation Only */}
+        <nav className="flex lg:hidden items-center bg-white/5 rounded-xl p-0.5 border border-white/10 backdrop-blur-md overflow-x-auto no-scrollbar flex-1 justify-center mx-2">
           {modes.map((m) => (
             <button
               key={m}
               onClick={() => setMode(m)}
-              className={`px-3 lg:px-5 py-2 rounded-xl text-[9px] lg:text-[10px] font-black uppercase tracking-widest transition-all duration-300 relative group whitespace-nowrap ${
-                mode === m ? 'text-black' : 'text-white/40 hover:text-white'
+              className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all duration-300 relative whitespace-nowrap ${
+                mode === m ? 'text-black' : 'text-white/40'
               }`}
             >
               {mode === m && (
                 <motion.div 
-                  layoutId="nav-pill"
-                  className="absolute inset-0 bg-orange-500 rounded-xl shadow-lg shadow-orange-500/20"
+                  layoutId="nav-pill-mobile"
+                  className="absolute inset-0 bg-orange-500 rounded-lg"
                 />
               )}
               <span className="relative z-10">{m.replace(/-/g, ' ')}</span>
@@ -75,7 +76,7 @@ export const Header: React.FC<HeaderProps> = ({
           ))}
         </nav>
 
-        <div className="flex items-center gap-2 lg:gap-4">
+        <div className="flex items-center gap-2 ml-auto">
           {/* Credits Display */}
           {user && (
             <button 
@@ -115,7 +116,12 @@ export const Header: React.FC<HeaderProps> = ({
           {user ? (
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
               <div className="hidden sm:flex flex-col items-end">
-                <span className="text-[9px] font-black text-white/30 uppercase tracking-widest">Operator</span>
+                <div className="flex items-center gap-1.5">
+                  {isAdmin && (
+                    <span className="px-1.5 py-0.5 bg-orange-500 text-black text-[7px] font-black rounded-sm uppercase tracking-tighter">ADMIN</span>
+                  )}
+                  <span className="text-[9px] font-black text-white/30 uppercase tracking-widest">Operator</span>
+                </div>
                 <span className="text-xs font-bold text-white/80">{user.displayName || user.email?.split('@')[0]}</span>
               </div>
               <button 

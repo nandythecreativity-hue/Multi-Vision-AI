@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Coins, Settings } from 'lucide-react';
+import { Coins, Settings, Users } from 'lucide-react';
 
 interface SettingsModalProps {
   show: boolean;
@@ -20,6 +20,7 @@ interface SettingsModalProps {
   setTargetAmount: (amount: number) => void;
   handleAdminAddCredits: () => void;
   adminActionLoading: boolean;
+  setMode: (mode: any) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -39,7 +40,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   targetAmount,
   setTargetAmount,
   handleAdminAddCredits,
-  adminActionLoading
+  adminActionLoading,
+  setMode
 }) => {
   return (
     <AnimatePresence>
@@ -78,19 +80,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               {isAdmin && (
-                <div className="space-y-4 p-4 bg-white/5 border border-white/10 rounded-2xl">
-                  <p className="text-xs font-bold text-white/40 uppercase tracking-widest">Admin Controls</p>
-                  
-                  <div className="space-y-2">
-                    <p className="text-[10px] text-white/60 font-medium uppercase tracking-wider">Self Top Up</p>
-                    <button
-                      onClick={handleTopUp}
-                      className="w-full bg-orange-500 hover:bg-orange-600 text-black font-black py-3 rounded-xl transition-all flex items-center justify-center gap-2"
-                    >
-                      <Coins className="w-4 h-4" />
-                      TOP UP +50 CREDITS (SELF)
-                    </button>
-                  </div>
+                  <div className="space-y-4 p-4 bg-white/5 border border-white/10 rounded-2xl">
+                    <p className="text-xs font-bold text-white/40 uppercase tracking-widest">Admin Controls</p>
+                    
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={() => {
+                          setMode('admin');
+                          onClose();
+                        }}
+                        className="w-full bg-orange-500/20 hover:bg-orange-500/30 text-orange-500 border border-orange-500/30 font-black py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs"
+                      >
+                        <Users className="w-4 h-4" />
+                        OPEN USER MANAGEMENT
+                      </button>
+                      <button
+                        onClick={handleTopUp}
+                        className="w-full bg-orange-500 hover:bg-orange-600 text-black font-black py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs"
+                      >
+                        <Coins className="w-4 h-4" />
+                        TOP UP +50 CREDITS (SELF)
+                      </button>
+                    </div>
 
                   <div className="space-y-3 pt-2 border-t border-white/5">
                     <p className="text-[10px] text-white/60 font-medium uppercase tracking-wider">Add Credits to User</p>

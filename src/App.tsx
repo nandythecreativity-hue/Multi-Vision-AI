@@ -80,6 +80,7 @@ declare global {
 }
 
 import { Header } from './components/Header';
+import { Sidebar } from './components/Sidebar';
 import { HistoryView } from './components/HistoryView';
 import { PromptConfiguration } from './components/PromptConfiguration';
 import { SettingsModal } from './components/SettingsModal';
@@ -961,15 +962,8 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-orange-500/30 overflow-x-hidden">
-      {/* Background Atmosphere */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-orange-500/5 blur-[120px] rounded-full" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/5 blur-[120px] rounded-full" />
-      </div>
-
-      <Header 
-        user={user} 
+    <div className="flex min-h-screen bg-[#050505] text-white font-sans selection:bg-orange-500/30 overflow-x-hidden">
+      <Sidebar 
         mode={mode} 
         setMode={(m) => {
           setMode(m);
@@ -979,9 +973,6 @@ export default function App() {
             setError(null);
           }
         }} 
-        loginWithGoogle={handleLogin} 
-        isLoggingIn={isLoggingIn}
-        logout={logout}
         isAdmin={isAdmin}
         onReset={() => {
           setMode('video');
@@ -990,11 +981,42 @@ export default function App() {
           setGeneratedImageUrl(null);
           setError(null);
         }}
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-        credits={credits}
-        onOpenSettings={() => setShowSettings(true)}
       />
+      
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Background Atmosphere */}
+        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-orange-500/5 blur-[120px] rounded-full" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/5 blur-[120px] rounded-full" />
+        </div>
+
+        <Header 
+          user={user} 
+          mode={mode} 
+          setMode={(m) => {
+            setMode(m);
+            if (m !== 'history') {
+              setGeneratedVideoUrl(null);
+              setGeneratedImageUrl(null);
+              setError(null);
+            }
+          }} 
+          loginWithGoogle={handleLogin} 
+          isLoggingIn={isLoggingIn}
+          logout={logout}
+          isAdmin={isAdmin}
+          onReset={() => {
+            setMode('video');
+            setPrompt('');
+            setGeneratedVideoUrl(null);
+            setGeneratedImageUrl(null);
+            setError(null);
+          }}
+          viewMode={viewMode}
+          setViewMode={setViewMode}
+          credits={credits}
+          onOpenSettings={() => setShowSettings(true)}
+        />
 
       <SettingsModal 
         show={showSettings}
@@ -1014,9 +1036,10 @@ export default function App() {
         setTargetAmount={setTargetAmount}
         handleAdminAddCredits={handleAdminAddCredits}
         adminActionLoading={adminActionLoading}
+        setMode={setMode}
       />
 
-      <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 relative z-20">
+      <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 relative z-20 w-full">
         <AnimatePresence mode="wait">
           {mode === 'admin' && isAdmin ? (
             <motion.div
@@ -1487,7 +1510,7 @@ export default function App() {
 </main>
 
       {/* Footer */}
-      <footer className="max-w-7xl mx-auto p-12 border-t border-white/5 text-center space-y-4">
+      <footer className="max-w-7xl mx-auto p-12 border-t border-white/5 text-center space-y-4 w-full">
         <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/20">Powered by Google Veo 3.1 & Gemini 3.1 Technology</p>
         <div className="flex items-center justify-center gap-6">
           <div className="w-1 h-1 bg-white/10 rounded-full" />
@@ -1495,6 +1518,7 @@ export default function App() {
           <div className="w-1 h-1 bg-white/10 rounded-full" />
         </div>
       </footer>
+      </div>
     </div>
   );
 }
