@@ -135,7 +135,8 @@ export default function App() {
   const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false);
   const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [credits, setCredits] = useState<number>(60);
+  const [imageCredits, setImageCredits] = useState<number>(0);
+  const [videoCredits, setVideoCredits] = useState<number>(0);
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -190,11 +191,12 @@ export default function App() {
           const userDoc = await getDoc(userDocRef);
 
           if (!userDoc.exists()) {
-            // Initialize new user with 60 credits
+            // Initialize new user with 50 image credits and 20 video credits
             await setDoc(userDocRef, {
               uid: firebaseUser.uid,
               email: firebaseUser.email,
-              credits: 60,
+              imageCredits: 50,
+              videoCredits: 20,
               role: firebaseUser.email === adminEmail ? 'admin' : 'user',
               status: 'online',
               lastActive: Date.now(),
@@ -202,21 +204,25 @@ export default function App() {
               videoCount: 0,
               createdAt: new Date().toISOString()
             });
-            setCredits(60);
+            setImageCredits(50);
+            setVideoCredits(20);
           } else {
             // Update status to online
             await updateDoc(userDocRef, {
               status: 'online',
               lastActive: Date.now()
             });
-            setCredits(userDoc.data().credits || 0);
+            const data = userDoc.data();
+            setImageCredits(data.imageCredits || 0);
+            setVideoCredits(data.videoCredits || 0);
           }
 
           // Listen for real-time credit updates
           unsubscribeCredits = onSnapshot(userDocRef, (doc) => {
             if (doc.exists()) {
               const data = doc.data();
-              setCredits(data.credits || 0);
+              setImageCredits(data.imageCredits || 0);
+              setVideoCredits(data.videoCredits || 0);
               setIsAdmin(data.role === 'admin' || firebaseUser.email === adminEmail);
             }
           }, (error) => {
@@ -245,7 +251,8 @@ export default function App() {
         }
       } else {
         setIsAdmin(false);
-        setCredits(0);
+        setImageCredits(0);
+        setVideoCredits(0);
       }
     });
 
@@ -490,14 +497,19 @@ export default function App() {
       return;
     }
 
-    if (credits < 5) {
-      setError("Insufficient credits. You need 5 credits to generate a thumbnail.");
+    if (imageCredits < 2) {
+      setError("Insufficient image credits. You need 2 image credits to generate a thumbnail.");
       return;
     }
 
     setIsGeneratingThumbnail(true);
     setStatus('Generating cinematic thumbnail...');
     try {
+      const userDocRef = doc(db, 'users', user.uid);
+      await updateDoc(userDocRef, {
+        imageCredits: increment(-2)
+      });
+
       const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
       
       // Only force key selection if NO key is available at all
@@ -734,7 +746,8 @@ export default function App() {
       return;
     }
     const isVideo = mode === 'video';
-    const creditCost = isVideo ? 20 : 0;
+    const creditCost = isVideo ? 20 : 4;
+    const currentCredits = isVideo ? videoCredits : imageCredits;
     
     // Image generation (non-video) fallback to system key if BYOK missing
     const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
@@ -744,8 +757,8 @@ export default function App() {
       return;
     }
     
-    if (isVideo && credits < creditCost) {
-      setError(`Insufficient credits. You need ${creditCost} credits to generate a video.`);
+    if (currentCredits < creditCost) {
+      setError(`Insufficient ${isVideo ? 'video' : 'image'} credits. You need ${creditCost} credits to generate a ${isVideo ? 'video' : 'image'}.`);
       return;
     }
 
@@ -772,13 +785,11 @@ export default function App() {
         status: 'online'
       };
       
-      if (creditCost > 0) {
-        updates.credits = increment(-creditCost);
-      }
-      
       if (isVideo) {
+        updates.videoCredits = increment(-creditCost);
         updates.videoCount = increment(1);
       } else {
+        updates.imageCredits = increment(-creditCost);
         updates.imageCount = increment(numOutputs);
       }
       
@@ -1104,7 +1115,8 @@ export default function App() {
     try {
       const userDocRef = doc(db, 'users', user.uid);
       await updateDoc(userDocRef, {
-        credits: increment(50)
+        imageCredits: increment(100),
+        videoCredits: increment(40)
       });
     } catch (err) {
       console.error("Top up error:", err);
@@ -1134,11 +1146,12 @@ export default function App() {
       const targetUserRef = doc(db, 'users', targetUserDoc.id);
       
       await updateDoc(targetUserRef, {
-        credits: increment(targetAmount)
+        imageCredits: increment(targetAmount),
+        videoCredits: increment(Math.floor(targetAmount / 2.5)) // Proportional video credits
       });
       
       setTargetEmail('');
-      alert(`Successfully added ${targetAmount} credits to ${targetEmail}`);
+      alert(`Successfully added credits to ${targetEmail}`);
     } catch (err) {
       console.error("Admin add credits error:", err);
       setError("Failed to add credits to user.");
@@ -1290,14 +1303,16 @@ export default function App() {
           }}
           viewMode={viewMode}
           setViewMode={setViewMode}
-          credits={credits}
+          imageCredits={imageCredits}
+          videoCredits={videoCredits}
           onOpenSettings={() => setShowSettings(true)}
         />
 
       <SettingsModal 
         show={showSettings}
         onClose={() => setShowSettings(false)}
-        credits={credits}
+        imageCredits={imageCredits}
+        videoCredits={videoCredits}
         isAdmin={isAdmin}
         user={user}
         handleTopUp={handleTopUp}
@@ -1538,7 +1553,7 @@ export default function App() {
                   <div className="flex flex-col items-center leading-none">
                     <span className="text-xs font-black">GENERATE {mode.replace(/-/g, ' ').toUpperCase()}</span>
                     <span className="text-[8px] font-bold opacity-70 mt-1">
-                      {mode === 'video' ? 'COST: 20 CREDITS' : 'NEURAL LINK ACTIVE (0 CREDITS)'}
+                      {mode === 'video' ? 'COST: 20 VIDEO CREDITS' : 'COST: 4 IMAGE CREDITS'}
                     </span>
                   </div>
                 ) : 'LOGIN TO GENERATE'}

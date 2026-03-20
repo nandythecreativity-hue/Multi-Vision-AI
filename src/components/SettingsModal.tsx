@@ -1,11 +1,12 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Coins, Settings, Users } from 'lucide-react';
+import { Coins, Settings, Users, Image as ImageIcon, Film } from 'lucide-react';
 
 interface SettingsModalProps {
   show: boolean;
   onClose: () => void;
-  credits: number;
+  imageCredits: number;
+  videoCredits: number;
   isAdmin: boolean;
   user: any;
   handleTopUp: () => void;
@@ -26,7 +27,8 @@ interface SettingsModalProps {
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   show,
   onClose,
-  credits,
+  imageCredits,
+  videoCredits,
   isAdmin,
   user,
   handleTopUp,
@@ -70,12 +72,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     ? "You are an Admin. You can top up credits for testing." 
                     : "Credits are now managed via your account. Login to sync your balance."}
                 </p>
-                <div className="flex items-center gap-2 pt-2">
-                  <Coins className="w-4 h-4 text-orange-500" />
-                  <span className="text-sm font-black text-white">{credits} Credits Available</span>
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className="flex items-center gap-2 p-3 bg-white/5 rounded-xl border border-white/10">
+                    <ImageIcon className="w-4 h-4 text-cyber-cyan" />
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-white/40 font-bold uppercase tracking-widest leading-none">Image</span>
+                      <span className="text-sm font-black text-white mt-1">{imageCredits}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 p-3 bg-white/5 rounded-xl border border-white/10">
+                    <Film className="w-4 h-4 text-orange-500" />
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-white/40 font-bold uppercase tracking-widest leading-none">Video</span>
+                      <span className="text-sm font-black text-white mt-1">{videoCredits}</span>
+                    </div>
+                  </div>
                 </div>
                 <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest pt-1">
-                  Video: 20 Credits | Image: 0 Credits
+                  Video: 20 Credits | Image: 4 Credits
                 </p>
                 {!user && (
                   <p className="text-[10px] text-red-400 font-bold uppercase">Login required to see credits</p>

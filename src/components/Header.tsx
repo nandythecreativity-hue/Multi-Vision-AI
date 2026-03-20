@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Video, LogIn, LogOut, Smartphone, Monitor, Layout, Coins, Settings } from 'lucide-react';
+import { Video, LogIn, LogOut, Smartphone, Monitor, Layout, Coins, Settings, Image as ImageIcon, Film } from 'lucide-react';
 import { AppMode } from '../types';
 import { FirebaseUser } from '../firebase';
 
@@ -14,7 +14,8 @@ interface HeaderProps {
   onReset: () => void;
   viewMode: 'auto' | 'portrait' | 'desktop';
   setViewMode: (mode: 'auto' | 'portrait' | 'desktop') => void;
-  credits: number;
+  imageCredits: number;
+  videoCredits: number;
   onOpenSettings: () => void;
   isAdmin: boolean;
   manualApiKey: string;
@@ -30,7 +31,8 @@ export const Header: React.FC<HeaderProps> = ({
   onReset,
   viewMode,
   setViewMode,
-  credits,
+  imageCredits,
+  videoCredits,
   onOpenSettings,
   isAdmin,
   manualApiKey
@@ -88,13 +90,24 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Credits Display */}
           {user && !manualApiKey && (
-            <button 
-              onClick={onOpenSettings}
-              className="flex items-center gap-1.5 px-2 py-1.5 bg-cyber-magenta/10 border border-cyber-magenta/20 rounded-lg hover:bg-cyber-magenta/20 transition-all group"
-            >
-              <Coins className="w-3.5 h-3.5 text-cyber-magenta group-hover:scale-110 transition-transform" />
-              <span className="text-[10px] font-black text-cyber-magenta">{credits}</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button 
+                onClick={onOpenSettings}
+                className="flex items-center gap-1.5 px-2 py-1.5 bg-cyber-cyan/10 border border-cyber-cyan/20 rounded-lg hover:bg-cyber-cyan/20 transition-all group"
+                title="Image Credits"
+              >
+                <ImageIcon className="w-3.5 h-3.5 text-cyber-cyan group-hover:scale-110 transition-transform" />
+                <span className="text-[10px] font-black text-cyber-cyan">{imageCredits}</span>
+              </button>
+              <button 
+                onClick={onOpenSettings}
+                className="flex items-center gap-1.5 px-2 py-1.5 bg-orange-500/10 border border-orange-500/20 rounded-lg hover:bg-orange-500/20 transition-all group"
+                title="Video Credits"
+              >
+                <Film className="w-3.5 h-3.5 text-orange-500 group-hover:scale-110 transition-transform" />
+                <span className="text-[10px] font-black text-orange-500">{videoCredits}</span>
+              </button>
+            </div>
           )}
 
           {/* View Mode Toggle */}

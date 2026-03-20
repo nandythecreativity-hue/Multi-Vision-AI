@@ -10,7 +10,8 @@ service cloud.firestore {
     // Fields:
     //   - uid: string (required) - User ID
     //   - email: string (required) - User email
-    //   - credits: number (required) - User credits
+    //   - imageCredits: number (required) - User image credits
+    //   - videoCredits: number (required) - User video credits
     //   - role: string (required) - 'admin' or 'user'
     //   - lastActive: number (optional) - Last activity timestamp
     //   - status: string (optional) - 'online' or 'offline'
@@ -82,13 +83,14 @@ service cloud.firestore {
     function isValidUser(data) {
       return data.uid is string &&
              data.email is string && isValidEmail(data.email) &&
-             data.credits is number &&
+             data.imageCredits is number &&
+             data.videoCredits is number &&
              data.role in ['admin', 'user'] &&
              (!('lastActive' in data) || data.lastActive is number) &&
              (!('status' in data) || data.status in ['online', 'offline']) &&
              (!('imageCount' in data) || data.imageCount is number) &&
              (!('videoCount' in data) || data.videoCount is number) &&
-             data.keys().hasAll(['uid', 'email', 'credits', 'role']);
+             data.keys().hasAll(['uid', 'email', 'imageCredits', 'videoCredits', 'role']);
     }
 
     function isValidHistory(data) {

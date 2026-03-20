@@ -14,9 +14,13 @@
           "format": "email",
           "description": "User's email address"
         },
-        "credits": {
+        "imageCredits": {
           "type": "number",
-          "description": "Remaining generation credits"
+          "description": "Remaining image generation credits"
+        },
+        "videoCredits": {
+          "type": "number",
+          "description": "Remaining video generation credits"
         },
         "role": {
           "type": "string",
@@ -46,7 +50,7 @@
           "description": "When the user account was created"
         }
       },
-      "required": ["uid", "email", "credits", "role"]
+      "required": ["uid", "email", "imageCredits", "videoCredits", "role"]
     },
     "history": {
       "title": "Generation History",

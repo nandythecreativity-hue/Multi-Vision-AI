@@ -12,14 +12,17 @@ import {
   X,
   Loader2,
   AlertCircle,
-  ArrowUpDown
+  ArrowUpDown,
+  Image as ImageIcon,
+  Video
 } from 'lucide-react';
 import { db, collection, getDocs, updateDoc, doc, deleteDoc, orderBy, query } from '../firebase';
 
 interface UserProfile {
   uid: string;
   email: string;
-  credits: number;
+  imageCredits: number;
+  videoCredits: number;
   role: 'admin' | 'user';
   createdAt?: string;
   displayName?: string;
@@ -35,7 +38,8 @@ export const AdminDashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingUser, setEditingUser] = useState<string | null>(null);
-  const [editCredits, setEditCredits] = useState<number>(0);
+  const [editImageCredits, setEditImageCredits] = useState<number>(0);
+  const [editVideoCredits, setEditVideoCredits] = useState<number>(0);
   const [editRole, setEditRole] = useState<'admin' | 'user'>('user');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -64,7 +68,8 @@ export const AdminDashboard: React.FC = () => {
 
   const handleEdit = (user: UserProfile) => {
     setEditingUser(user.uid);
-    setEditCredits(user.credits);
+    setEditImageCredits(user.imageCredits || 0);
+    setEditVideoCredits(user.videoCredits || 0);
     setEditRole(user.role);
   };
 
@@ -73,10 +78,11 @@ export const AdminDashboard: React.FC = () => {
     try {
       const userRef = doc(db, 'users', uid);
       await updateDoc(userRef, {
-        credits: editCredits,
+        imageCredits: editImageCredits,
+        videoCredits: editVideoCredits,
         role: editRole
       });
-      setUsers(users.map(u => u.uid === uid ? { ...u, credits: editCredits, role: editRole } : u));
+      setUsers(users.map(u => u.uid === uid ? { ...u, imageCredits: editImageCredits, videoCredits: editVideoCredits, role: editRole } : u));
       setEditingUser(null);
     } catch (err) {
       console.error("Error updating user:", err);
@@ -147,7 +153,8 @@ export const AdminDashboard: React.FC = () => {
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40">Activity</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40">Role</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40 text-center">Stats</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40">Credits</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40">Image Credits</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40">Video Credits</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40 text-right">Actions</th>
               </tr>
             </thead>
@@ -229,31 +236,63 @@ export const AdminDashboard: React.FC = () => {
                       {editingUser === user.uid ? (
                         <div className="flex items-center gap-2">
                           <button 
-                            onClick={() => setEditCredits(prev => Math.max(0, prev - 50))}
+                            onClick={() => setEditImageCredits(prev => Math.max(0, prev - 10))}
                             className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 text-[10px] font-bold text-white/40 hover:text-white transition-all"
                           >
-                            -50
+                            -10
                           </button>
                           <div className="relative">
-                            <Coins className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-orange-500" />
+                            <ImageIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-cyber-cyan" />
                             <input 
                               type="number"
-                              value={editCredits}
-                              onChange={(e) => setEditCredits(parseInt(e.target.value) || 0)}
-                              className="bg-white/5 border border-white/10 rounded-lg pl-7 pr-2 py-2 text-xs w-24 focus:outline-none focus:border-orange-500/50 font-bold"
+                              value={editImageCredits}
+                              onChange={(e) => setEditImageCredits(parseInt(e.target.value) || 0)}
+                              className="bg-white/5 border border-white/10 rounded-lg pl-7 pr-2 py-2 text-xs w-20 focus:outline-none focus:border-cyber-cyan/50 font-bold"
                             />
                           </div>
                           <button 
-                            onClick={() => setEditCredits(prev => prev + 50)}
+                            onClick={() => setEditImageCredits(prev => prev + 10)}
                             className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 text-[10px] font-bold text-white/40 hover:text-white transition-all"
                           >
-                            +50
+                            +10
                           </button>
                         </div>
                       ) : (
                         <div className="flex items-center gap-2">
-                          <Coins className="w-3 h-3 text-orange-500/40" />
-                          <span className="text-sm font-bold text-white/80">{user.credits}</span>
+                          <ImageIcon className="w-3 h-3 text-cyber-cyan/40" />
+                          <span className="text-sm font-bold text-white/80">{user.imageCredits || 0}</span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      {editingUser === user.uid ? (
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => setEditVideoCredits(prev => Math.max(0, prev - 5))}
+                            className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 text-[10px] font-bold text-white/40 hover:text-white transition-all"
+                          >
+                            -5
+                          </button>
+                          <div className="relative">
+                            <Video className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-orange-500" />
+                            <input 
+                              type="number"
+                              value={editVideoCredits}
+                              onChange={(e) => setEditVideoCredits(parseInt(e.target.value) || 0)}
+                              className="bg-white/5 border border-white/10 rounded-lg pl-7 pr-2 py-2 text-xs w-20 focus:outline-none focus:border-orange-500/50 font-bold"
+                            />
+                          </div>
+                          <button 
+                            onClick={() => setEditVideoCredits(prev => prev + 5)}
+                            className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 text-[10px] font-bold text-white/40 hover:text-white transition-all"
+                          >
+                            +5
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Video className="w-3 h-3 text-orange-500/40" />
+                          <span className="text-sm font-bold text-white/80">{user.videoCredits || 0}</span>
                         </div>
                       )}
                     </td>
