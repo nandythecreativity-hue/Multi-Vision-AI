@@ -53,6 +53,9 @@ import {
   where,
   getDocs,
   collection,
+  orderBy,
+  addDoc,
+  deleteDoc,
   FirebaseUser,
   handleFirestoreError,
   OperationType
@@ -93,7 +96,7 @@ export default function App() {
   const [mode, setMode] = useState<AppMode>('video');
   const [apiKeySelected, setApiKeySelected] = useState<boolean | null>(null);
   const [prompt, setPrompt] = useState('');
-  const [image, setImage] = useState<string | null>(null);
+  const [images, setImages] = useState<string[]>([]);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   const [resolution, setResolution] = useState<Resolution>('720p');
   const [scaleImage, setScaleImage] = useState(false);
@@ -120,10 +123,7 @@ export default function App() {
   const [status, setStatus] = useState<string>('');
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [lastVideoOperation, setLastVideoOperation] = useState<any>(null);
-  const [history, setHistory] = useState<HistoryItem[]>(() => {
-    const saved = localStorage.getItem('vision_ai_history');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
   const [generatedThumbnailUrl, setGeneratedThumbnailUrl] = useState<string | null>(null);
   const [generatedTitle, setGeneratedTitle] = useState<string>('');
@@ -234,21 +234,7 @@ export default function App() {
     });
 
     // Clean up stale blob URLs from history on mount
-    const savedHistory = localStorage.getItem('vision_ai_history');
-    if (savedHistory) {
-      try {
-        const parsed = JSON.parse(savedHistory);
-        const cleaned = parsed.map((item: any) => {
-          if (item.type === 'video' && item.url.startsWith('blob:')) {
-            return { ...item, url: '', expired: true };
-          }
-          return item;
-        });
-        setHistory(cleaned);
-      } catch (e) {
-        console.error("Failed to parse history:", e);
-      }
-    }
+    // (Deprecated: History is now in Firestore)
 
     return () => {
       unsubscribeAuth();
@@ -261,33 +247,7 @@ export default function App() {
   }, [manualApiKey]);
 
   useEffect(() => {
-    const saveHistory = () => {
-      try {
-        localStorage.setItem('vision_ai_history', JSON.stringify(history));
-      } catch (e) {
-        if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-          console.warn("LocalStorage quota exceeded, truncating history...");
-          // If quota exceeded, try saving only the most recent 10 items
-          if (history.length > 10) {
-            const truncated = history.slice(0, 10);
-            try {
-              localStorage.setItem('vision_ai_history', JSON.stringify(truncated));
-            } catch (innerE) {
-              console.error("Failed to save even truncated history:", innerE);
-              // Last resort: clear history from storage if it's still too big
-              localStorage.removeItem('vision_ai_history');
-            }
-          } else if (history.length > 0) {
-            // If even 10 items are too much (e.g. very large images), try saving one by one or just clear
-            localStorage.removeItem('vision_ai_history');
-          }
-        } else {
-          console.error("Failed to save history:", e);
-        }
-      }
-    };
-
-    saveHistory();
+    // History is now handled by Firestore
   }, [history]);
 
   const checkApiKey = async () => {
@@ -330,12 +290,22 @@ export default function App() {
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (file && images.length < 5) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImage(reader.result as string);
+        setImages(prev => [...prev, reader.result as string]);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const addImage = (url: string) => {
+    if (images.length < 5) {
+      setImages(prev => [...prev, url]);
     }
   };
 
@@ -479,13 +449,69 @@ export default function App() {
     }
   };
 
-  const addToHistory = (item: Omit<HistoryItem, 'id' | 'timestamp'>) => {
-    const newItem: HistoryItem = {
-      ...item,
-      id: Math.random().toString(36).substring(2, 11),
-      timestamp: Date.now(),
+  useEffect(() => {
+    let unsubscribeHistory: () => void;
+
+    if (user) {
+      const historyQuery = query(
+        collection(db, 'history'),
+        where('uid', '==', user.uid),
+        orderBy('timestamp', 'desc')
+      );
+
+      unsubscribeHistory = onSnapshot(historyQuery, (snapshot) => {
+        const items = snapshot.docs.map(doc => ({
+          ...doc.data(),
+          id: doc.id
+        })) as HistoryItem[];
+        setHistory(items);
+      }, (error) => {
+        console.error("History snapshot error:", error);
+        if (error.code !== 'permission-denied') {
+          handleFirestoreError(error, OperationType.GET, 'history');
+        }
+      });
+    } else {
+      setHistory([]);
+    }
+
+    return () => {
+      if (unsubscribeHistory) unsubscribeHistory();
     };
-    setHistory(prev => [newItem, ...prev].slice(0, 20));
+  }, [user]);
+
+  const addToHistory = async (item: Omit<HistoryItem, 'id' | 'timestamp'>) => {
+    const newItem = {
+      ...item,
+      timestamp: Date.now(),
+      uid: user?.uid || 'anonymous'
+    };
+
+    if (user) {
+      try {
+        await addDoc(collection(db, 'history'), newItem);
+      } catch (err) {
+        console.error("Error adding to history:", err);
+        handleFirestoreError(err, OperationType.CREATE, 'history');
+      }
+    } else {
+      // Fallback for anonymous users (not recommended for production)
+      const localItem = { ...newItem, id: Math.random().toString(36).substring(2, 11) };
+      setHistory(prev => [localItem as HistoryItem, ...prev].slice(0, 20));
+    }
+  };
+
+  const deleteFromHistory = async (id: string) => {
+    if (user) {
+      try {
+        await deleteDoc(doc(db, 'history', id));
+      } catch (err) {
+        console.error("Error deleting from history:", err);
+        handleFirestoreError(err, OperationType.DELETE, 'history');
+      }
+    } else {
+      setHistory(prev => prev.filter(h => h.id !== id));
+    }
   };
 
   const extendVideo = async () => {
@@ -556,15 +582,23 @@ export default function App() {
       setShowSettings(true);
       return;
     }
-    const creditCost = mode === 'video' ? 20 : 5;
+    const isVideo = mode === 'video';
+    const creditCost = isVideo ? 20 : 0;
     
-    if (credits < creditCost) {
-      setError(`Insufficient credits. You need ${creditCost} credits to generate a ${mode.replace(/-/g, ' ')}.`);
+    // Image generation (non-video) requires BYOK
+    if (!isVideo && !manualApiKey) {
+      setError("Image generation requires BYOK (Bring Your Own Key) mode. Please enter your Gemini API key in Settings.");
+      setShowSettings(true);
+      return;
+    }
+    
+    if (isVideo && credits < creditCost) {
+      setError(`Insufficient credits. You need ${creditCost} credits to generate a video.`);
       return;
     }
 
-    if (!prompt.trim() && !image) {
-      setError("Please provide a prompt or a reference image.");
+    if (!prompt.trim() && images.length === 0) {
+      setError("Please provide a prompt or at least one reference image.");
       return;
     }
 
@@ -579,11 +613,13 @@ export default function App() {
     setStatus('Initializing generation...');
 
     try {
-      // Deduct credits in Firestore
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        credits: increment(-creditCost)
-      });
+      // Deduct credits in Firestore only for video
+      if (creditCost > 0) {
+        const userDocRef = doc(db, 'users', user.uid);
+        await updateDoc(userDocRef, {
+          credits: increment(-creditCost)
+        });
+      }
 
       // For Veo models, we MUST ensure a paid API key is selected via the platform dialog
       if (window.aistudio && mode === 'video' && !manualApiKey) {
@@ -601,9 +637,9 @@ export default function App() {
       
       const ai = new GoogleGenAI({ apiKey: currentApiKey || '' });
 
-      // Step 1: Analyze Reference Image for maximum fidelity if image exists
+      // Step 1: Analyze Reference Image for maximum fidelity if images exist
       let detailedProductDescription = "";
-      const referenceForAnalysis = image || (autoAddProduct && products.length > 0 ? products[0].image : null);
+      const referenceForAnalysis = images[0] || (autoAddProduct && products.length > 0 ? products[0].image : null);
       
       if (referenceForAnalysis && productFidelity) {
         setStatus('Analyzing product details for 100% fidelity...');
@@ -648,12 +684,53 @@ export default function App() {
 
         let operation;
         
-        // Use main image or first product image as reference for Veo
-        const videoReferenceImage = image || (autoAddProduct && products.length > 0 ? products[0].image : null);
-
-        if (videoReferenceImage) {
-          const base64Data = videoReferenceImage.split(',')[1];
-          const mimeType = videoReferenceImage.split(';')[0].split(':')[1];
+        // Use images for Veo
+        if (images.length > 0) {
+          const referenceImagesPayload: any[] = [];
+          
+          // Veo 3.1 supports up to 3 reference images for specific models
+          // We'll use the first one as the starting frame if it's the only one, 
+          // or use referenceImages if multiple are provided.
+          
+          if (images.length === 1) {
+            const base64Data = images[0].split(',')[1];
+            const mimeType = images[0].split(';')[0].split(':')[1];
+            
+            operation = await ai.models.generateVideos({
+              model: 'veo-3.1-fast-generate-preview',
+              prompt: finalPrompt,
+              image: {
+                imageBytes: base64Data,
+                mimeType: mimeType,
+              },
+              config
+            });
+          } else {
+            // Multiple images (up to 3 for Veo)
+            for (const img of images.slice(0, 3)) {
+              referenceImagesPayload.push({
+                image: {
+                  imageBytes: img.split(',')[1],
+                  mimeType: img.split(';')[0].split(':')[1],
+                },
+                referenceType: 'ASSET',
+              });
+            }
+            
+            operation = await ai.models.generateVideos({
+              model: 'veo-3.1-generate-preview',
+              prompt: finalPrompt,
+              config: {
+                ...config,
+                referenceImages: referenceImagesPayload,
+                resolution: '720p', // Required for multiple refs
+                aspectRatio: '16:9' // Required for multiple refs
+              }
+            });
+          }
+        } else if (autoAddProduct && products.length > 0) {
+          const base64Data = products[0].image.split(',')[1];
+          const mimeType = products[0].image.split(';')[0].split(':')[1];
           
           operation = await ai.models.generateVideos({
             model: 'veo-3.1-fast-generate-preview',
@@ -714,15 +791,17 @@ export default function App() {
         const upscaleContext = scaleImage ? "UPSCALE REQUIREMENT: Enhance the image to ultra-high resolution with maximum detail and clarity. Perform super-resolution upscaling while preserving all original features." : "";
         const parts: any[] = [{ text: `${animationStyle} style, ${sceneType} scene, ${lightingStyle} lighting, ${characterContext} ${productContext} ${prompt}. ${fidelityContext} ${upscaleContext} The product must be visually indistinguishable from the reference.` }];
         
-        // Add main reference image if it exists
-        if (image) {
-          const base64Data = image.split(',')[1];
-          const mimeType = image.split(';')[0].split(':')[1];
-          parts.unshift({
-            inlineData: {
-              data: base64Data,
-              mimeType: mimeType,
-            },
+        // Add reference images if they exist
+        if (images.length > 0) {
+          images.forEach(img => {
+            const base64Data = img.split(',')[1];
+            const mimeType = img.split(';')[0].split(':')[1];
+            parts.unshift({
+              inlineData: {
+                data: base64Data,
+                mimeType: mimeType,
+              },
+            });
           });
         }
 
@@ -910,7 +989,7 @@ export default function App() {
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-[#111] border border-white/10 rounded-3xl p-8 text-center space-y-6 shadow-2xl"
+          className="max-w-md w-full bg-[#111] border border-white/10 rounded-3xl p-8 text-center space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto no-scrollbar"
         >
           <div className="w-20 h-20 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto">
             <Settings className="w-10 h-10 text-orange-500" />
@@ -932,23 +1011,26 @@ export default function App() {
             
             <div className="relative">
               <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10"></div></div>
-              <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#111] px-2 text-white/40">Or enter manually</span></div>
+              <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#111] px-2 text-white/40">Or Use BYOK Mode</span></div>
             </div>
 
             <div className="space-y-2">
+              <p className="text-[10px] text-white/40 mb-2">
+                Bring Your Own Key: Enter your personal Gemini API key to bypass platform credits.
+              </p>
               <input 
                 type="password"
                 value={manualApiKey}
                 onChange={(e) => setManualApiKey(e.target.value)}
-                placeholder="Enter API Key manually..."
+                placeholder="Enter your Gemini API Key..."
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500/50"
               />
               <button
                 onClick={handleSaveManualKey}
                 disabled={!manualApiKey}
-                className="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50"
+                className="w-full bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 border border-orange-500/20 font-bold py-3 rounded-xl transition-all disabled:opacity-50 text-xs"
               >
-                Use Manual Key
+                ACTIVATE BYOK MODE
               </button>
             </div>
           </div>
@@ -962,7 +1044,17 @@ export default function App() {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#050505] text-white font-sans selection:bg-orange-500/30 overflow-x-hidden">
+    <div className="flex min-h-screen bg-cyber-bg text-white font-sans selection:bg-cyber-cyan/30 overflow-x-hidden relative">
+      {/* Cyber Grid Background */}
+      <div className="fixed inset-0 pointer-events-none z-0 opacity-[0.05]" 
+           style={{ 
+             backgroundImage: 'linear-gradient(var(--color-cyber-cyan) 1px, transparent 1px), linear-gradient(90deg, var(--color-cyber-cyan) 1px, transparent 1px)',
+             backgroundSize: '40px 40px'
+           }} 
+      />
+      {/* Scanline Effect */}
+      <div className="fixed inset-0 pointer-events-none z-[100] opacity-[0.03] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_2px,3px_100%]" />
+      
       <Sidebar 
         mode={mode} 
         setMode={(m) => {
@@ -974,6 +1066,7 @@ export default function App() {
           }
         }} 
         isAdmin={isAdmin}
+        viewMode={viewMode}
         onReset={() => {
           setMode('video');
           setPrompt('');
@@ -986,8 +1079,9 @@ export default function App() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Background Atmosphere */}
         <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-orange-500/5 blur-[120px] rounded-full" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/5 blur-[120px] rounded-full" />
+          <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-cyber-cyan/10 blur-[150px] rounded-full animate-pulse" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-cyber-magenta/10 blur-[150px] rounded-full animate-pulse" />
+          <div className="absolute top-[20%] right-[10%] w-[30%] h-[30%] bg-cyber-yellow/5 blur-[120px] rounded-full" />
         </div>
 
         <Header 
@@ -1005,6 +1099,7 @@ export default function App() {
           isLoggingIn={isLoggingIn}
           logout={logout}
           isAdmin={isAdmin}
+          manualApiKey={manualApiKey}
           onReset={() => {
             setMode('video');
             setPrompt('');
@@ -1040,6 +1135,7 @@ export default function App() {
       />
 
       <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 relative z-20 w-full">
+        <div className="absolute inset-0 bg-cyber-cyan/5 blur-[100px] pointer-events-none" />
         <AnimatePresence mode="wait">
           {mode === 'admin' && isAdmin ? (
             <motion.div
@@ -1059,7 +1155,7 @@ export default function App() {
             >
               <HistoryView 
                 history={history} 
-                onDelete={(id) => setHistory(prev => prev.filter(h => h.id !== id))} 
+                onDelete={deleteFromHistory} 
                 onReopen={(item) => {
                   setMode('video');
                   setGeneratedVideoUrl(item.url);
@@ -1144,8 +1240,9 @@ export default function App() {
             removeProduct={removeProduct}
             autoAddProduct={autoAddProduct}
             setAutoAddProduct={setAutoAddProduct}
-            image={image}
-            setImage={setImage}
+            images={images}
+            removeImage={removeImage}
+            addImage={addImage}
             fileInputRef={fileInputRef}
             handleImageUpload={handleImageUpload}
             aspectRatio={aspectRatio}
@@ -1205,21 +1302,21 @@ export default function App() {
             </div>
           )}
 
-          <section className="flex items-center justify-between p-4 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 mb-4">
+          <section className="flex items-center justify-between p-4 bg-white/[0.02] backdrop-blur-md rounded-2xl border border-cyber-cyan/10 mb-4 shadow-[0_0_15px_rgba(0,243,255,0.05)]">
             <div className="flex items-center gap-3">
-              <Maximize2 className="w-5 h-5 text-orange-500" />
+              <Maximize2 className="w-5 h-5 text-cyber-cyan drop-shadow-[0_0_5px_rgba(0,243,255,0.5)]" />
               <div>
-                <p className="text-sm font-bold">Scale Image (Upscale)</p>
-                <p className="text-[10px] text-white/40">Enhance resolution and detail</p>
+                <p className="text-sm font-bold text-white/90">Scale Image (Upscale)</p>
+                <p className="text-[10px] text-white/40 uppercase tracking-widest">Enhance resolution</p>
               </div>
             </div>
             <button 
               onClick={() => setScaleImage(!scaleImage)}
-              className={`w-12 h-6 rounded-full transition-colors relative ${scaleImage ? 'bg-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.4)]' : 'bg-white/10'}`}
+              className={`w-12 h-6 rounded-full transition-all duration-300 relative ${scaleImage ? 'bg-cyber-cyan shadow-[0_0_15px_rgba(0,243,255,0.6)]' : 'bg-white/10'}`}
             >
               <motion.div 
                 animate={{ x: scaleImage ? 26 : 4 }}
-                className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg"
+                className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-[0_0_5px_rgba(255,255,255,0.8)]"
               />
             </button>
           </section>
@@ -1231,30 +1328,37 @@ export default function App() {
               handleVideoGenerate();
             }}
             disabled={isGenerating}
-            className={`w-full py-5 rounded-2xl font-black text-lg tracking-tight transition-all flex items-center justify-center gap-3 relative group overflow-hidden cursor-pointer z-40 touch-manipulation ${
+            className={`w-full py-5 rounded-2xl font-black text-lg tracking-tight transition-all flex items-center justify-center gap-3 relative group overflow-hidden cursor-pointer z-40 touch-manipulation glitch-hover ${
               isGenerating
                 ? 'bg-white/5 text-white/20 cursor-not-allowed' 
                 : !user
                   ? 'bg-white/10 text-white/40 hover:bg-white/20 border border-white/10'
-                  : 'bg-orange-500 hover:bg-orange-400 text-black shadow-2xl shadow-orange-500/40 active:scale-[0.98]'
+                  : 'bg-cyber-cyan hover:bg-cyber-cyan/80 text-black shadow-[0_0_30px_rgba(0,243,255,0.4)] active:scale-[0.98]'
             }`}
           >
             {!isGenerating && user && (
               <motion.div 
                 animate={{ opacity: [0.2, 0.5, 0.2] }}
                 transition={{ duration: 2, repeat: Infinity }}
-                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -skew-x-12 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"
               />
             )}
             {isGenerating ? (
               <>
-                <Loader2 className="w-6 h-6 animate-spin" />
-                <span className="animate-pulse">GENERATING...</span>
+                <Loader2 className="w-6 h-6 animate-spin text-black" />
+                <span className="animate-pulse">SYNTHESIZING...</span>
               </>
             ) : (
               <>
                 <Play className="w-6 h-6 fill-current" />
-                {user ? `GENERATE ${mode.replace(/-/g, ' ').toUpperCase()}` : 'LOGIN TO GENERATE'}
+                {user ? (
+                  <div className="flex flex-col items-center leading-none">
+                    <span className="text-xs font-black">GENERATE {mode.replace(/-/g, ' ').toUpperCase()}</span>
+                    <span className="text-[8px] font-bold opacity-70 mt-1">
+                      {mode === 'video' ? 'COST: 20 CREDITS' : 'NEURAL LINK ACTIVE (0 CREDITS)'}
+                    </span>
+                  </div>
+                ) : 'LOGIN TO GENERATE'}
               </>
             )}
           </button>
@@ -1320,20 +1424,20 @@ export default function App() {
                         <motion.div 
                           animate={{ rotate: 360 }}
                           transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-                          className="w-24 h-24 rounded-full border-t-2 border-r-2 border-orange-500/50"
+                          className="w-24 h-24 rounded-full border-t-2 border-r-2 border-cyber-cyan/50 shadow-[0_0_20px_rgba(0,243,255,0.2)]"
                         />
                         <motion.div 
                           animate={{ rotate: -360 }}
                           transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                          className="absolute inset-2 rounded-full border-b-2 border-l-2 border-blue-500/50"
+                          className="absolute inset-2 rounded-full border-b-2 border-l-2 border-cyber-magenta/50 shadow-[0_0_20px_rgba(255,0,255,0.2)]"
                         />
                         <div className="absolute inset-0 flex items-center justify-center">
-                          <Sparkles className="w-8 h-8 text-orange-500 animate-pulse" />
+                          <Sparkles className="w-8 h-8 text-cyber-cyan animate-pulse drop-shadow-[0_0_8px_rgba(0,243,255,0.8)]" />
                         </div>
                       </div>
                       <div className="text-center space-y-2">
-                        <p className="text-sm font-black uppercase tracking-[0.3em] text-orange-500">Processing</p>
-                        <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">Synthesizing Neural Visuals</p>
+                        <p className="text-sm font-black uppercase tracking-[0.3em] text-cyber-cyan drop-shadow-[0_0_5px_rgba(0,243,255,0.5)]">Processing</p>
+                        <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">Neural Synthesis Active</p>
                       </div>
                     </motion.div>
                   ) : generatedVideoUrl ? (
@@ -1423,7 +1527,7 @@ export default function App() {
                     <a 
                       href={generatedVideoUrl || generatedImageUrl || ''} 
                       download={mode === 'video' ? "vision-ai-video.mp4" : "vision-ai-image.png"}
-                      className="flex-1 py-4 bg-orange-500 hover:bg-orange-600 text-black rounded-2xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(249,115,22,0.3)] active:scale-[0.98]"
+                      className="flex-1 py-4 bg-cyber-cyan hover:bg-cyber-cyan/80 text-black rounded-2xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,243,255,0.4)] active:scale-[0.98]"
                     >
                       <Download className="w-4 h-4" />
                       Download {mode === 'video' ? 'MP4' : 'PNG'}
@@ -1435,17 +1539,17 @@ export default function App() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.2 }}
-                    className="space-y-4 p-6 bg-white/5 border border-white/10 rounded-3xl"
+                    className="space-y-4 p-6 bg-white/[0.02] border border-cyber-cyan/10 rounded-3xl shadow-[0_0_15px_rgba(0,243,255,0.05)]"
                   >
                     <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-black uppercase tracking-widest text-orange-500">Content Metadata</h3>
-                      {isGeneratingMetadata && <Loader2 className="w-4 h-4 animate-spin text-orange-500" />}
+                      <h3 className="text-xs font-black uppercase tracking-widest text-cyber-cyan drop-shadow-[0_0_5px_rgba(0,243,255,0.5)]">Neural Metadata</h3>
+                      {isGeneratingMetadata && <Loader2 className="w-4 h-4 animate-spin text-cyber-cyan" />}
                     </div>
                     
                     <div className="space-y-4">
                       <div className="space-y-1">
                         <p className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Suggested Title</p>
-                        <p className="text-sm font-bold">{generatedTitle || 'Generating...'}</p>
+                        <p className="text-sm font-bold text-white/90">{generatedTitle || 'Generating...'}</p>
                       </div>
                       <div className="space-y-1">
                         <p className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Description</p>
@@ -1453,7 +1557,7 @@ export default function App() {
                       </div>
                       <div className="space-y-1">
                         <p className="text-[10px] font-bold text-white/40 uppercase tracking-wider">Hashtags</p>
-                        <p className="text-xs text-orange-500/80 font-mono">{generatedHashtags || 'Generating...'}</p>
+                        <p className="text-xs text-cyber-magenta/80 font-mono drop-shadow-[0_0_3px_rgba(255,0,255,0.3)]">{generatedHashtags || 'Generating...'}</p>
                       </div>
                     </div>
                   </motion.div>
@@ -1472,7 +1576,7 @@ export default function App() {
                           <button 
                             onClick={generateThumbnail}
                             disabled={isGeneratingThumbnail}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 rounded-lg border border-orange-500/20 transition-all text-[10px] font-bold uppercase tracking-wider"
+                            className="flex items-center gap-2 px-3 py-1.5 bg-cyber-magenta/10 hover:bg-cyber-magenta/20 text-cyber-magenta rounded-lg border border-cyber-magenta/20 transition-all text-[10px] font-bold uppercase tracking-wider shadow-[0_0_10px_rgba(255,0,255,0.1)]"
                           >
                             {isGeneratingThumbnail ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImageIcon className="w-3 h-3" />}
                             Generate Thumbnail (5 Credits)

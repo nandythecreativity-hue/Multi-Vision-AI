@@ -42,8 +42,9 @@ interface ControlsProps {
   removeProduct: (i: number) => void;
   autoAddProduct: boolean;
   setAutoAddProduct: (v: boolean) => void;
-  image: string | null;
-  setImage: (img: string | null) => void;
+  images: string[];
+  removeImage: (i: number) => void;
+  addImage: (url: string) => void;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   handleImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   aspectRatio: AspectRatio;
@@ -78,8 +79,9 @@ export const Controls: React.FC<ControlsProps> = ({
   removeProduct,
   autoAddProduct,
   setAutoAddProduct,
-  image,
-  setImage,
+  images,
+  removeImage,
+  addImage,
   fileInputRef,
   handleImageUpload,
   aspectRatio,
@@ -167,7 +169,7 @@ export const Controls: React.FC<ControlsProps> = ({
               onClick={() => setCharacterModel(m)}
               className={`py-3 rounded-2xl text-[10px] font-bold border transition-all flex flex-col items-center gap-2 ${
                 characterModel === m 
-                  ? 'bg-orange-500 border-orange-500 text-black shadow-[0_0_20px_rgba(249,115,22,0.3)]' 
+                  ? 'bg-cyber-cyan border-cyber-cyan text-black shadow-[0_0_20px_rgba(0,243,255,0.4)]' 
                   : 'bg-white/5 border-white/10 text-white/60 hover:border-white/20'
               }`}
             >
@@ -216,7 +218,7 @@ export const Controls: React.FC<ControlsProps> = ({
             <span className="text-[10px] font-bold uppercase text-white/40">Auto Add</span>
             <button 
               onClick={() => setAutoAddProduct(!autoAddProduct)}
-              className={`w-8 h-4 rounded-full transition-colors relative ${autoAddProduct ? 'bg-orange-500' : 'bg-white/10'}`}
+              className={`w-8 h-4 rounded-full transition-colors relative ${autoAddProduct ? 'bg-cyber-cyan shadow-[0_0_10px_rgba(0,243,255,0.4)]' : 'bg-white/10'}`}
             >
               <motion.div 
                 animate={{ x: autoAddProduct ? 18 : 2 }}
@@ -231,7 +233,7 @@ export const Controls: React.FC<ControlsProps> = ({
             <div 
               onClick={() => productFileInputRef.current?.click()}
               className={`w-10 h-10 rounded-xl border-2 border-dashed flex items-center justify-center cursor-pointer transition-all overflow-hidden flex-shrink-0 ${
-                newProductImage ? 'border-orange-500/50' : 'border-white/10 hover:border-white/20'
+                newProductImage ? 'border-cyber-cyan/50 shadow-[0_0_10px_rgba(0,243,255,0.2)]' : 'border-white/10 hover:border-white/20'
               }`}
             >
               {newProductImage ? (
@@ -257,7 +259,7 @@ export const Controls: React.FC<ControlsProps> = ({
             />
             <button 
               onClick={addProduct}
-              className="p-2 bg-orange-500 text-black rounded-xl hover:bg-orange-600 transition-colors"
+              className="p-2 bg-cyber-cyan text-black rounded-xl hover:bg-cyber-cyan/80 transition-colors shadow-[0_0_10px_rgba(0,243,255,0.4)]"
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -267,12 +269,20 @@ export const Controls: React.FC<ControlsProps> = ({
             {products.map((p, i) => (
               <div 
                 key={i} 
-                onClick={() => p.image && setImage(p.image)}
-                className={`flex items-center gap-3 p-2 bg-white/5 border rounded-2xl group cursor-pointer transition-all ${
-                  image === p.image ? 'border-orange-500 bg-orange-500/5' : 'border-white/10 hover:border-white/20'
+                onClick={() => {
+                  if (p.image) {
+                    if (images.includes(p.image)) {
+                      removeImage(images.indexOf(p.image));
+                    } else if (images.length < 5) {
+                      addImage(p.image);
+                    }
+                  }
+                }}
+                className={`flex items-center gap-2 p-2 rounded-xl border transition-all cursor-pointer ${
+                  images.includes(p.image || '') ? 'border-cyber-cyan bg-cyber-cyan/5 shadow-[0_0_10px_rgba(0,243,255,0.1)]' : 'border-white/10 hover:border-white/20'
                 }`}
               >
-                <div className="w-8 h-8 rounded-lg bg-black overflow-hidden flex-shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-black overflow-hidden flex-shrink-0 border border-white/5">
                   {p.image ? (
                     <img src={p.image || null} alt={p.name} className="w-full h-full object-cover" />
                   ) : (
@@ -281,7 +291,7 @@ export const Controls: React.FC<ControlsProps> = ({
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-[10px] font-bold text-white/80 truncate">{p.name}</p>
-                  {image === p.image && <p className="text-[8px] text-orange-500 font-black uppercase">Active Ref</p>}
+                  {images.includes(p.image || '') && <p className="text-[8px] text-cyber-cyan font-black uppercase drop-shadow-[0_0_5px_rgba(0,243,255,0.5)]">Active Ref</p>}
                 </div>
                 <button 
                   onClick={(e) => {
@@ -303,37 +313,59 @@ export const Controls: React.FC<ControlsProps> = ({
 
       {mode !== 'text-to-image' && (
         <section className="space-y-4">
-          <div className="flex items-center gap-2 text-white/60">
-            <ImageIcon className="w-4 h-4" />
-            <h2 className="text-xs font-bold uppercase tracking-widest">Reference Image</h2>
-          </div>
-          <div 
-            onClick={() => fileInputRef.current?.click()}
-            className={`relative group cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed transition-all ${
-              image ? 'border-orange-500/50' : 'border-white/10 hover:border-white/20'
-            }`}
-          >
-            {image ? (
-              <div className="relative aspect-video">
-                <img src={image || null} alt="Reference" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <p className="text-xs font-bold">Change Image</p>
-                </div>
-              </div>
-            ) : (
-              <div className="aspect-video flex flex-col items-center justify-center gap-3 bg-white/5">
-                <Upload className="w-8 h-8 text-white/20 group-hover:text-white/40 transition-colors" />
-                <p className="text-xs text-white/40 font-medium">Click to upload reference image</p>
-              </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-white/60">
+              <ImageIcon className="w-4 h-4" />
+              <h2 className="text-xs font-bold uppercase tracking-widest">Reference Images ({images.length}/5)</h2>
+            </div>
+            {images.length < 5 && (
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="text-[10px] font-bold text-cyber-cyan uppercase tracking-widest hover:text-cyber-cyan/80 transition-colors flex items-center gap-1 drop-shadow-[0_0_5px_rgba(0,243,255,0.5)]"
+              >
+                <Plus className="w-3 h-3" /> Add Image
+              </button>
             )}
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleImageUpload} 
-              className="hidden" 
-              accept="image/*"
-            />
           </div>
+          
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {images.map((img, idx) => (
+              <motion.div 
+                key={idx}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="relative aspect-video rounded-xl border border-white/10 overflow-hidden group"
+              >
+                <img src={img} alt={`Ref ${idx + 1}`} className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <button 
+                    onClick={() => removeImage(idx)}
+                    className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+            
+            {images.length < 5 && (
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="aspect-video rounded-xl border-2 border-dashed border-white/10 hover:border-cyber-cyan/30 hover:bg-cyber-cyan/5 transition-all flex flex-col items-center justify-center gap-2 group"
+              >
+                <Upload className="w-5 h-5 text-white/20 group-hover:text-cyber-cyan transition-colors" />
+                <span className="text-[9px] font-bold text-white/20 group-hover:text-cyber-cyan uppercase tracking-widest">Upload Ref</span>
+              </button>
+            )}
+          </div>
+          
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleImageUpload} 
+            className="hidden" 
+            accept="image/*"
+          />
         </section>
       )}
 
@@ -347,7 +379,7 @@ export const Controls: React.FC<ControlsProps> = ({
                 onClick={() => setAspectRatio(ratio)}
                 className={`px-3 py-2 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-2 ${
                   aspectRatio === ratio 
-                    ? 'bg-orange-500 border-orange-500 text-black' 
+                    ? 'bg-cyber-cyan border-cyber-cyan text-black shadow-[0_0_15px_rgba(0,243,255,0.4)]' 
                     : 'bg-white/5 border-white/10 text-white/60 hover:border-white/20'
                 }`}
               >
@@ -368,7 +400,7 @@ export const Controls: React.FC<ControlsProps> = ({
                 onClick={() => setResolution(res)}
                 className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
                   resolution === res 
-                    ? 'bg-orange-500 border-orange-500 text-black' 
+                    ? 'bg-cyber-cyan border-cyber-cyan text-black shadow-[0_0_15px_rgba(0,243,255,0.4)]' 
                     : 'bg-white/5 border-white/10 text-white/60 hover:border-white/20'
                 }`}
               >

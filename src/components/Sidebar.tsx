@@ -16,13 +16,15 @@ interface SidebarProps {
   setMode: (mode: AppMode) => void;
   isAdmin: boolean;
   onReset: () => void;
+  viewMode: 'auto' | 'portrait' | 'desktop';
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
   mode, 
   setMode, 
   isAdmin,
-  onReset 
+  onReset,
+  viewMode
 }) => {
   const modes: { id: AppMode; label: string; icon: any }[] = [
     { id: 'video', label: 'Video Generation', icon: Video },
@@ -36,54 +38,58 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }
 
   return (
-    <aside className="hidden lg:flex flex-col w-72 border-r border-white/5 bg-[#050505] sticky top-0 h-screen p-6 gap-8 z-50">
+    <aside className={`${viewMode === 'portrait' ? 'flex w-16 sm:w-72' : 'hidden lg:flex w-72'} flex-col border-r border-cyber-cyan/10 bg-cyber-bg/80 backdrop-blur-xl sticky top-0 h-screen p-3 sm:p-6 gap-8 z-50 transition-all duration-300`}>
       <motion.div 
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        className="flex items-center gap-3 cursor-pointer"
+        className="flex items-center gap-3 cursor-pointer overflow-hidden group/logo"
         onClick={onReset}
       >
-        <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-600 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
+        <div className="w-10 h-10 bg-gradient-to-br from-cyber-cyan to-cyber-magenta rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(0,243,255,0.4)] shrink-0 group-hover/logo:shadow-[0_0_30px_rgba(255,0,255,0.6)] transition-all duration-500">
           <Sparkles className="w-6 h-6 text-black" />
         </div>
-        <div>
-          <p className="text-[7px] font-black text-orange-500/50 uppercase tracking-[0.3em] mb-0.5">Creator : Nandiarzhanka</p>
-          <h1 className="text-xl font-black tracking-tighter uppercase leading-none">Vision<span className="text-orange-500">AI</span></h1>
-          <p className="text-[9px] uppercase tracking-[0.2em] text-white/30 font-bold mt-1">Creative Suite Pro</p>
+        <div className={`${viewMode === 'portrait' ? 'hidden sm:block' : 'block'} glitch-hover`}>
+          <p className="text-[7px] font-black text-cyber-cyan/50 uppercase tracking-[0.3em] mb-0.5">Creator : Nandiarzhanka</p>
+          <h1 className="text-xl font-black tracking-tighter uppercase leading-none">Vision<span className="neon-text-magenta">AI</span></h1>
+          <p className="text-[9px] uppercase tracking-[0.2em] text-white/30 font-bold mt-1">Cyber Suite Pro</p>
         </div>
       </motion.div>
 
       <nav className="flex flex-col gap-2">
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/20 mb-2 px-4">Navigation</p>
+        <p className={`text-[10px] font-black uppercase tracking-[0.2em] text-white/20 mb-2 px-4 ${viewMode === 'portrait' ? 'hidden sm:block' : 'block'}`}>Navigation</p>
         {modes.map((m) => (
           <button
             key={m.id}
             onClick={() => setMode(m.id)}
-            className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all duration-300 relative group ${
+            className={`flex items-center gap-4 px-3 sm:px-4 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all duration-300 relative group ${
               mode === m.id ? 'text-black' : 'text-white/40 hover:text-white hover:bg-white/5'
             }`}
+            title={m.label}
           >
             {mode === m.id && (
               <motion.div 
                 layoutId="sidebar-nav-pill"
-                className="absolute inset-0 bg-orange-500 rounded-2xl shadow-lg shadow-orange-500/20"
+                className="absolute inset-0 bg-cyber-cyan rounded-2xl shadow-[0_0_20px_rgba(0,243,255,0.4)]"
               />
             )}
-            <m.icon className={`w-4 h-4 relative z-10 ${mode === m.id ? 'text-black' : 'text-white/20 group-hover:text-orange-500'} transition-colors`} />
-            <span className="relative z-10">{m.label}</span>
+            <m.icon className={`w-4 h-4 relative z-10 shrink-0 ${mode === m.id ? 'text-black' : 'text-white/20 group-hover:text-cyber-cyan'} transition-colors`} />
+            <span className={`relative z-10 truncate ${viewMode === 'portrait' ? 'hidden sm:block' : 'block'}`}>{m.label}</span>
           </button>
         ))}
       </nav>
 
       <div className="mt-auto">
-        <div className="p-4 bg-white/5 border border-white/10 rounded-2xl">
+        <div className={`p-4 bg-white/[0.02] border border-cyber-cyan/20 rounded-2xl shadow-[inset_0_0_10px_rgba(0,243,255,0.1)] ${viewMode === 'portrait' ? 'hidden sm:block' : 'block'}`}>
           <div className="flex items-center gap-2 mb-2">
-            <Layout className="w-3.5 h-3.5 text-orange-500" />
-            <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Pro Workspace</p>
+            <Layout className="w-3.5 h-3.5 text-cyber-magenta" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Cyber Workspace</p>
           </div>
           <p className="text-[9px] text-white/30 leading-relaxed font-medium">
-            Advanced AI models active. Ready for high-fidelity generation.
+            Neural AI models active. Cyber-link established.
           </p>
+        </div>
+        <div className={`sm:hidden flex justify-center ${viewMode === 'portrait' ? 'block' : 'hidden'}`}>
+           <Layout className="w-4 h-4 text-cyber-magenta opacity-40" />
         </div>
       </div>
     </aside>

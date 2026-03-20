@@ -58,7 +58,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="relative w-full max-w-md bg-[#111] border border-white/10 rounded-3xl p-8 space-y-6 shadow-2xl"
+            className="relative w-full max-w-md bg-[#111] border border-white/10 rounded-3xl p-8 space-y-6 shadow-2xl max-h-[85vh] overflow-y-auto no-scrollbar"
           >
             <h2 className="text-xl font-bold">API Key & Credits</h2>
             
@@ -74,6 +74,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <Coins className="w-4 h-4 text-orange-500" />
                   <span className="text-sm font-black text-white">{credits} Credits Available</span>
                 </div>
+                <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest pt-1">
+                  Video: 20 Credits | Image: 0 Credits (BYOK Required)
+                </p>
                 {!user && (
                   <p className="text-[10px] text-red-400 font-bold uppercase">Login required to see credits</p>
                 )}
@@ -145,19 +148,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               <div className="space-y-2">
-                <p className="text-xs font-bold text-white/40 uppercase tracking-widest">Manual Input</p>
+                <p className="text-xs font-bold text-white/40 uppercase tracking-widest">BYOK (Bring Your Own Key)</p>
+                <p className="text-[10px] text-white/30 leading-relaxed">
+                  Use your own Google Gemini API key. This will bypass the platform's credit system for AI generation.
+                </p>
                 <input 
                   type="password"
                   value={manualApiKey}
                   onChange={(e) => setManualApiKey(e.target.value)}
-                  placeholder="Enter API Key manually..."
+                  placeholder="Enter your Gemini API Key..."
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500/50"
                 />
                 <button
                   onClick={handleSaveManualKey}
-                  className="w-full bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl transition-all"
+                  className="w-full bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 border border-orange-500/20 font-bold py-3 rounded-xl transition-all text-xs"
                 >
-                  Save Manual Key
+                  ACTIVATE BYOK MODE
                 </button>
               </div>
 

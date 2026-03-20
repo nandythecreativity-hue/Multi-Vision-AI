@@ -11,12 +11,34 @@
         "role": { "type": "string", "enum": ["admin", "user"], "description": "The user's role in the application" }
       },
       "required": ["uid", "email", "credits", "role"]
+    },
+    "History": {
+      "title": "Generation History",
+      "description": "Stores metadata about generated videos and images",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["video", "image"] },
+        "url": { "type": "string" },
+        "prompt": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "thumbnail": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "hashtags": { "type": "string" },
+        "uid": { "type": "string" }
+      },
+      "required": ["id", "type", "url", "prompt", "timestamp", "uid"]
     }
   },
   "firestore": {
     "/users/{uid}": {
       "schema": "User",
       "description": "User profile document containing credits and role"
+    },
+    "/history/{historyId}": {
+      "schema": "History",
+      "description": "Generation history items"
     }
   }
 }

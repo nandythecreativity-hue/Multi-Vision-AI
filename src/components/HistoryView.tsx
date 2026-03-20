@@ -39,10 +39,15 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onDelete, onR
               animate={{ opacity: 1, scale: 1 }}
               className="group bg-white/5 border border-white/10 rounded-[32px] overflow-hidden hover:border-orange-500/30 transition-all shadow-xl"
             >
-              <div className="relative aspect-video bg-black">
-                {item.type === 'video' ? (
+              <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
+                {item.expired || !item.url ? (
+                  <div className="flex flex-col items-center gap-2 text-white/20">
+                    <History className="w-8 h-8" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Data Expired</span>
+                  </div>
+                ) : item.type === 'video' ? (
                   <video 
-                    src={item.url || null} 
+                    src={item.url} 
                     className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity"
                     muted
                     loop
@@ -59,7 +64,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onDelete, onR
                     }}
                   />
                 ) : (
-                  <img src={item.url || null} alt={item.prompt} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" />
+                  <img src={item.url} alt={item.prompt} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" />
                 )}
                 <div className="absolute top-4 left-4">
                   <div className="px-3 py-1 bg-black/60 backdrop-blur-md rounded-full border border-white/10 flex items-center gap-2">
@@ -80,18 +85,20 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onDelete, onR
                 <p className="text-xs text-white/60 line-clamp-2 font-medium leading-relaxed italic">"{item.prompt}"</p>
                 <div className="flex items-center justify-between text-[10px] text-white/30 font-bold uppercase tracking-widest">
                   <span>{new Date(item.timestamp).toLocaleDateString()}</span>
-                  <a 
-                    href={item.url} 
-                    download 
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-2 text-orange-500 hover:text-orange-400 transition-colors"
-                  >
-                    <Download className="w-3 h-3" />
-                    Download
-                  </a>
+                  {!item.expired && item.url && (
+                    <a 
+                      href={item.url} 
+                      download 
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-2 text-orange-500 hover:text-orange-400 transition-colors"
+                    >
+                      <Download className="w-3 h-3" />
+                      Download
+                    </a>
+                  )}
                 </div>
-                {item.type === 'video' && item.operation && (
+                {item.type === 'video' && item.operation && !item.expired && (
                   <button 
                     onClick={() => onReopen(item)}
                     className="w-full mt-2 py-2 glass-button text-[10px] font-black uppercase tracking-widest"

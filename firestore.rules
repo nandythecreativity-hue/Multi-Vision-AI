@@ -47,6 +47,19 @@ service cloud.firestore {
              (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() < 64));
     }
 
+    function isValidHistory(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() < 128 &&
+             data.type in ['video', 'image'] &&
+             data.url is string && data.url.size() < 2048 &&
+             data.prompt is string && data.prompt.size() < 5000 &&
+             data.timestamp is number &&
+             data.uid == request.auth.uid &&
+             (!('thumbnail' in data) || (data.thumbnail is string && data.thumbnail.size() < 1048576)) &&
+             (!('title' in data) || (data.title is string && data.title.size() < 256)) &&
+             (!('description' in data) || (data.description is string && data.description.size() < 2048)) &&
+             (!('hashtags' in data) || (data.hashtags is string && data.hashtags.size() < 512));
+    }
+
     match /users/{userId} {
       // Users can read their own profile, admins can read all
       allow read: if isOwner(userId) || isAdmin();
@@ -67,6 +80,17 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['credits']) &&
           request.resource.data.credits < resource.data.credits
         ) || isAdmin();
+    }
+
+    match /history/{historyId} {
+      // Users can read their own history, admins can read all
+      allow read: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+      
+      // Users can create their own history
+      allow create: if isAuthenticated() && isValidHistory(request.resource.data);
+      
+      // Users can delete their own history
+      allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
     match /test/connection {

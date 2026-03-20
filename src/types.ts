@@ -9,6 +9,7 @@ export interface HistoryItem {
   prompt: string;
   timestamp: number;
   operation?: any;
+  expired?: boolean;
   metadata?: {
     title?: string;
     description?: string;
