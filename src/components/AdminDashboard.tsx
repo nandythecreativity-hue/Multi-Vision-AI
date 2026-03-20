@@ -23,6 +23,10 @@ interface UserProfile {
   role: 'admin' | 'user';
   createdAt?: string;
   displayName?: string;
+  lastActive?: number;
+  status?: 'online' | 'offline';
+  imageCount?: number;
+  videoCount?: number;
 }
 
 export const AdminDashboard: React.FC = () => {
@@ -139,7 +143,10 @@ export const AdminDashboard: React.FC = () => {
             <thead>
               <tr className="border-b border-white/5 bg-white/[0.02]">
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40">User</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40">Status</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40">Activity</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40">Role</th>
+                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40 text-center">Stats</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40">Credits</th>
                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-white/40 text-right">Actions</th>
               </tr>
@@ -173,6 +180,19 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${user.status === 'online' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' : 'bg-white/10'}`} />
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${user.status === 'online' ? 'text-green-500' : 'text-white/20'}`}>
+                          {user.status || 'offline'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-[10px] font-mono text-white/40 uppercase">
+                        {user.lastActive ? new Date(user.lastActive).toLocaleString() : 'Never'}
+                      </p>
+                    </td>
+                    <td className="px-6 py-4">
                       {editingUser === user.uid ? (
                         <select 
                           value={editRole}
@@ -194,15 +214,41 @@ export const AdminDashboard: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-4">
+                      <div className="flex items-center justify-center gap-4">
+                        <div className="text-center">
+                          <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">Images</p>
+                          <p className="text-xs font-bold text-cyber-cyan">{user.imageCount || 0}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[10px] font-black text-white/20 uppercase tracking-widest mb-1">Videos</p>
+                          <p className="text-xs font-bold text-orange-500">{user.videoCount || 0}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
                       {editingUser === user.uid ? (
                         <div className="flex items-center gap-2">
-                          <Coins className="w-3 h-3 text-orange-500" />
-                          <input 
-                            type="number"
-                            value={editCredits}
-                            onChange={(e) => setEditCredits(parseInt(e.target.value) || 0)}
-                            className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs w-20 focus:outline-none focus:border-orange-500/50"
-                          />
+                          <button 
+                            onClick={() => setEditCredits(prev => Math.max(0, prev - 50))}
+                            className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 text-[10px] font-bold text-white/40 hover:text-white transition-all"
+                          >
+                            -50
+                          </button>
+                          <div className="relative">
+                            <Coins className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-orange-500" />
+                            <input 
+                              type="number"
+                              value={editCredits}
+                              onChange={(e) => setEditCredits(parseInt(e.target.value) || 0)}
+                              className="bg-white/5 border border-white/10 rounded-lg pl-7 pr-2 py-2 text-xs w-24 focus:outline-none focus:border-orange-500/50 font-bold"
+                            />
+                          </div>
+                          <button 
+                            onClick={() => setEditCredits(prev => prev + 50)}
+                            className="w-8 h-8 flex items-center justify-center bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 text-[10px] font-bold text-white/40 hover:text-white transition-all"
+                          >
+                            +50
+                          </button>
                         </div>
                       ) : (
                         <div className="flex items-center gap-2">

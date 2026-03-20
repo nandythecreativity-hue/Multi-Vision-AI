@@ -196,10 +196,19 @@ export default function App() {
               email: firebaseUser.email,
               credits: 60,
               role: firebaseUser.email === adminEmail ? 'admin' : 'user',
+              status: 'online',
+              lastActive: Date.now(),
+              imageCount: 0,
+              videoCount: 0,
               createdAt: new Date().toISOString()
             });
             setCredits(60);
           } else {
+            // Update status to online
+            await updateDoc(userDocRef, {
+              status: 'online',
+              lastActive: Date.now()
+            });
             setCredits(userDoc.data().credits || 0);
           }
 
@@ -248,6 +257,34 @@ export default function App() {
       if (unsubscribeCredits) unsubscribeCredits();
     };
   }, []);
+
+  // Track online/offline status
+  useEffect(() => {
+    if (!user) return;
+
+    const userDocRef = doc(db, 'users', user.uid);
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        updateDoc(userDocRef, { status: 'online', lastActive: Date.now() });
+      } else {
+        updateDoc(userDocRef, { status: 'offline', lastActive: Date.now() });
+      }
+    };
+
+    const handleBeforeUnload = () => {
+      updateDoc(userDocRef, { status: 'offline', lastActive: Date.now() });
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      updateDoc(userDocRef, { status: 'offline', lastActive: Date.now() });
+    };
+  }, [user]);
 
   useEffect(() => {
     checkApiKey();
@@ -728,13 +765,24 @@ export default function App() {
     setStatus('Initializing generation...');
 
     try {
-      // Deduct credits in Firestore only for video
+      // Deduct credits and increment counters in Firestore
+      const userDocRef = doc(db, 'users', user.uid);
+      const updates: any = {
+        lastActive: Date.now(),
+        status: 'online'
+      };
+      
       if (creditCost > 0) {
-        const userDocRef = doc(db, 'users', user.uid);
-        await updateDoc(userDocRef, {
-          credits: increment(-creditCost)
-        });
+        updates.credits = increment(-creditCost);
       }
+      
+      if (isVideo) {
+        updates.videoCount = increment(1);
+      } else {
+        updates.imageCount = increment(numOutputs);
+      }
+      
+      await updateDoc(userDocRef, updates);
 
       // For Veo models, we try to use BYOK but fallback to system key
       if (window.aistudio && mode === 'video' && !manualApiKey && !(process.env as any).API_KEY && !process.env.GEMINI_API_KEY) {

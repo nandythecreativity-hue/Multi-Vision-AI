@@ -12,6 +12,10 @@ service cloud.firestore {
     //   - email: string (required) - User email
     //   - credits: number (required) - User credits
     //   - role: string (required) - 'admin' or 'user'
+    //   - lastActive: number (optional) - Last activity timestamp
+    //   - status: string (optional) - 'online' or 'offline'
+    //   - imageCount: number (optional) - Total images generated
+    //   - videoCount: number (optional) - Total videos generated
     //   - createdAt: string (optional) - ISO date
     //
     // Collection: history
@@ -80,6 +84,10 @@ service cloud.firestore {
              data.email is string && isValidEmail(data.email) &&
              data.credits is number &&
              data.role in ['admin', 'user'] &&
+             (!('lastActive' in data) || data.lastActive is number) &&
+             (!('status' in data) || data.status in ['online', 'offline']) &&
+             (!('imageCount' in data) || data.imageCount is number) &&
+             (!('videoCount' in data) || data.videoCount is number) &&
              data.keys().hasAll(['uid', 'email', 'credits', 'role']);
     }
 
