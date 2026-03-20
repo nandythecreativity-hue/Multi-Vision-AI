@@ -233,7 +233,7 @@ export default function App() {
             } else if (error.message.includes('offline') || error.message.includes('Failed to get document')) {
               console.error("Firestore is offline. Please check your Firebase Console.");
             } else {
-              handleFirestoreError(error, OperationType.GET, 'users');
+              handleFirestoreError(error, OperationType.GET, userDocRef.path);
             }
           });
         } catch (err) {
@@ -241,7 +241,7 @@ export default function App() {
           if (err instanceof Error && !err.message.includes('Firestore Error')) {
             // If it's not already a handled firestore error, wrap it
             try {
-              handleFirestoreError(err, OperationType.GET, 'users');
+              handleFirestoreError(err, OperationType.GET, userDocRef.path);
             } catch (e) {
               // Re-throw the wrapped error
               throw e;
@@ -431,8 +431,9 @@ export default function App() {
       const ai = new GoogleGenAI({ apiKey: currentApiKey || '' });
       
       const cameraContext = CAMERA_STYLE_DESCRIPTIONS[cameraStyle] || `Camera movement: ${cameraStyle}.`;
-      const enhancementPrompt = `Enhance this visual prompt for an AI video generator. 
-      Make it more descriptive, cinematic, and detailed. 
+      const isImage = mode === 'text-to-image' || mode === 'image-to-image';
+      const enhancementPrompt = `Enhance this visual prompt for an AI ${isImage ? 'image' : 'video'} generator. 
+      Make it more descriptive, cinematic, and detailed while ensuring MAXIMAL ACCURACY to the original intent. 
       The style is ${animationStyle}, the ${cameraContext}, and the scene is ${sceneType}.
       Keep it under 100 words. Return ONLY the enhanced prompt.
       Original Prompt: "${prompt}"`;
@@ -522,8 +523,8 @@ export default function App() {
       const ai = new GoogleGenAI({ apiKey: currentApiKey });
       
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: { parts: [{ text: `High-quality cinematic YouTube thumbnail for: ${prompt}. Style: ${animationStyle}. Vibrant colors, eye-catching composition, no text.` }] },
+        model: 'gemini-3.1-flash-image-preview',
+        contents: { parts: [{ text: `High-quality cinematic YouTube thumbnail for: ${prompt}. Style: ${animationStyle}. Vibrant colors, eye-catching composition, no text. STRICT PROMPT ADHERENCE: Follow the prompt details exactly.` }] },
         config: {
           imageConfig: {
             aspectRatio: '16:9',
@@ -854,7 +855,22 @@ export default function App() {
         const cameraContext = CAMERA_STYLE_DESCRIPTIONS[cameraStyle] || `Camera: ${cameraStyle}.`;
         const styleContext = `Style: ${animationStyle}. ${cameraContext} Scene: ${sceneType}. Lighting: ${lightingStyle}. ${characterContext} ${productContext}`;
         const upscaleContext = scaleImage ? "UPSCALE REQUIREMENT: Enhance the output to ultra-high resolution with maximum detail and clarity. Perform super-resolution upscaling while preserving all original features." : "";
-        const finalPrompt = `${styleContext} ${prompt} ${fidelityContext} ${upscaleContext} ${enableSound ? '(Include high-quality atmospheric sound effects)' : '(Silent video)'} The product is the absolute central focus and must be visually indistinguishable from the source reference.`;
+        const finalPrompt = `STRICT FIDELITY & CINEMATIC REQUIREMENT:
+        Generate a high-end cinematic video with fluid motion, realistic physics, and professional lighting.
+        Follow these specifications with 100% accuracy:
+        - STYLE: ${animationStyle}
+        - CAMERA: ${cameraContext}
+        - SCENE: ${sceneType}
+        - LIGHTING: ${lightingStyle}
+        - CHARACTER: ${characterContext}
+        - PRODUCT CONTEXT: ${productContext}
+        - MAIN PROMPT: ${prompt}
+        - FIDELITY: ${fidelityContext}
+        - ENHANCEMENT: ${upscaleContext}
+        - AUDIO: ${enableSound ? 'Include high-quality atmospheric sound effects' : 'Silent video'}
+        
+        Ensure the product is the absolute central focus and is visually indistinguishable from the source reference. 
+        Maintain perfect temporal consistency and photorealistic rendering throughout the entire video duration.`;
 
         let operation;
         
@@ -964,7 +980,21 @@ export default function App() {
           : "";
         const upscaleContext = scaleImage ? "UPSCALE REQUIREMENT: Enhance the image to ultra-high resolution with maximum detail and clarity. Perform super-resolution upscaling while preserving all original features." : "";
         const cameraContext = CAMERA_STYLE_DESCRIPTIONS[cameraStyle] || `Camera: ${cameraStyle}.`;
-        const parts: any[] = [{ text: `${animationStyle} style, ${cameraContext} ${sceneType} scene, ${lightingStyle} lighting, ${characterContext} ${productContext} ${prompt}. ${fidelityContext} ${upscaleContext} The product must be visually indistinguishable from the reference.` }];
+        const parts: any[] = [{ text: `STRICT PROMPT ADHERENCE & HIGH FIDELITY REQUIREMENT: 
+        Generate a masterpiece image with extreme detail, photorealistic textures, and perfect composition. 
+        Follow these specifications with 100% accuracy:
+        - STYLE: ${animationStyle}
+        - CAMERA: ${cameraContext}
+        - SCENE: ${sceneType}
+        - LIGHTING: ${lightingStyle}
+        - CHARACTER: ${characterContext}
+        - PRODUCT CONTEXT: ${productContext}
+        - MAIN PROMPT: ${prompt}
+        - FIDELITY: ${fidelityContext}
+        - ENHANCEMENT: ${upscaleContext}
+        
+        Ensure the product is the absolute central focus and is visually indistinguishable from the source reference. 
+        Render with high dynamic range, sharp focus, and professional color grading.` }];
         
         // Add reference images if they exist
         if (images.length > 0) {
@@ -1000,11 +1030,12 @@ export default function App() {
         const generationPromises = Array.from({ length: numOutputs }).map(async (_, i) => {
           try {
             const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash-image',
+              model: 'gemini-3.1-flash-image-preview',
               contents: { parts },
               config: {
                 imageConfig: {
-                  aspectRatio: aspectRatio as any
+                  aspectRatio: aspectRatio as any,
+                  imageSize: scaleImage ? '2K' : '1K'
                 }
               }
             });

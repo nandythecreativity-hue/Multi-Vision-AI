@@ -1,7 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { initializeFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, getDocFromServer, increment, query, where, getDocs, collection, deleteDoc, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
-import { getAnalytics, isSupported } from "firebase/analytics";
 
 // Import the provisioned Firebase configuration
 import firebaseConfig from '../firebase-applet-config.json';
@@ -15,24 +14,8 @@ export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 }, firebaseConfig.firestoreDatabaseId || '(default)');
 
-// Analytics
-let analytics = null;
-if (typeof window !== 'undefined') {
-  isSupported().then((supported) => {
-    if (supported) {
-      try {
-        analytics = getAnalytics(app);
-      } catch (e) {
-        console.warn("Analytics failed to initialize:", e);
-      }
-    } else {
-      console.log("Firebase Analytics is not supported in this environment.");
-    }
-  }).catch((e) => {
-    console.warn("Error checking Analytics support:", e);
-  });
-}
-export { analytics };
+// Analytics is disabled in this environment to prevent "Failed to fetch" errors in the sandboxed iframe.
+export const analytics = null;
 
 export const googleProvider = new GoogleAuthProvider();
 
