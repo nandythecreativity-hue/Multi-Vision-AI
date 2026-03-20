@@ -1,16 +1,38 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { initializeFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, getDocFromServer, increment, query, where, getDocs, collection, deleteDoc, orderBy, addDoc } from 'firebase/firestore';
+import { initializeFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, getDocFromServer, increment, query, where, getDocs, collection, deleteDoc, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
+import { getAnalytics, isSupported } from "firebase/analytics";
+
+// Import the provisioned Firebase configuration
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Use initializeFirestore with experimentalForceLongPolling for better stability in some environments
+// Use initializeFirestore with the provisioned database ID
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 }, firebaseConfig.firestoreDatabaseId || '(default)');
+
+// Analytics
+let analytics = null;
+if (typeof window !== 'undefined') {
+  isSupported().then((supported) => {
+    if (supported) {
+      try {
+        analytics = getAnalytics(app);
+      } catch (e) {
+        console.warn("Analytics failed to initialize:", e);
+      }
+    } else {
+      console.log("Firebase Analytics is not supported in this environment.");
+    }
+  }).catch((e) => {
+    console.warn("Error checking Analytics support:", e);
+  });
+}
+export { analytics };
 
 export const googleProvider = new GoogleAuthProvider();
 
@@ -73,15 +95,15 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 // Test connection
 async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    // Attempt to get a document from a non-existent collection to test connectivity
+    await getDocFromServer(doc(db, '_connection_test_', 'ping'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration. ");
+    if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('Failed to get document'))) {
+      console.error("CRITICAL: Firestore is unreachable. Please ensure you have created the Firestore database in the Firebase Console for project 'multy-vision-ai'.");
     }
-    // Skip logging for other errors, as this is simply a connection test.
   }
 }
 testConnection();
 
-export { onAuthStateChanged, increment, doc, getDoc, setDoc, updateDoc, onSnapshot, query, where, getDocs, collection, deleteDoc, orderBy, addDoc };
+export { onAuthStateChanged, increment, doc, getDoc, setDoc, updateDoc, onSnapshot, query, where, getDocs, collection, deleteDoc, orderBy, addDoc, serverTimestamp };
 export type { FirebaseUser };

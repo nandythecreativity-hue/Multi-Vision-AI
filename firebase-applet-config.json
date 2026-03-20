@@ -1,10 +1,10 @@
 {
-  "projectId": "project-ea87ea79-0d14-4003-881",
-  "appId": "1:389591270090:web:415b3a9c8888699c2e6a33",
-  "apiKey": "AIzaSyDOAnCX_XbkgMnrzPwDltcsFkuEvTxhIzg",
-  "authDomain": "project-ea87ea79-0d14-4003-881.firebaseapp.com",
+  "projectId": "multy-vision-ai",
+  "appId": "1:107931624738:web:42822c2dd2927bb56fb17b",
+  "apiKey": "AIzaSyDBp4-OsS9EKDetSBgfHGoxWRZfrETJwzs",
+  "authDomain": "multy-vision-ai.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-bc2265ae-63a8-4bc2-be5e-36268fef6296",
-  "storageBucket": "project-ea87ea79-0d14-4003-881.firebasestorage.app",
-  "messagingSenderId": "389591270090",
+  "storageBucket": "multy-vision-ai.firebasestorage.app",
+  "messagingSenderId": "107931624738",
   "measurementId": ""
 }

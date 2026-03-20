@@ -1,6 +1,6 @@
 {
-  "name": "Multi Vision AI",
-  "description": "Professional-grade AI video and image generation with advanced character modeling, product placement, and cinematic controls.",
+  "name": "Multy Vision AI",
+  "description": "Full-stack AI SaaS platform for image and video generation with BYOK (Bring Your Own Key) and fallback API systems.",
   "requestFramePermissions": [
     "camera",
     "microphone"

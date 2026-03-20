@@ -1,44 +1,51 @@
 {
   "entities": {
-    "User": {
-      "title": "User Profile",
-      "description": "Stores user credits and role information",
+    "users": {
+      "title": "User",
+      "description": "User profile and credit information",
       "type": "object",
       "properties": {
-        "uid": { "type": "string", "description": "The unique user ID from Firebase Auth" },
-        "email": { "type": "string", "format": "email", "description": "The user's email address" },
-        "credits": { "type": "number", "description": "Remaining generation credits" },
-        "role": { "type": "string", "enum": ["admin", "user"], "description": "The user's role in the application" }
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "credits": { "type": "number" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "subscription": { "type": "string", "enum": ["free", "pro", "premium"] }
       },
       "required": ["uid", "email", "credits", "role"]
     },
-    "History": {
-      "title": "Generation History",
-      "description": "Stores metadata about generated videos and images",
+    "api_keys": {
+      "title": "API Keys",
+      "description": "User-provided API keys (encrypted)",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "type": { "type": "string", "enum": ["video", "image"] },
-        "url": { "type": "string" },
-        "prompt": { "type": "string" },
-        "timestamp": { "type": "number" },
-        "thumbnail": { "type": "string" },
-        "title": { "type": "string" },
-        "description": { "type": "string" },
-        "hashtags": { "type": "string" },
-        "uid": { "type": "string" }
+        "userId": { "type": "string" },
+        "provider": { "type": "string", "enum": ["gemini", "openai", "other"] },
+        "encryptedKey": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "type", "url", "prompt", "timestamp", "uid"]
+      "required": ["userId", "provider", "encryptedKey", "isActive"]
+    },
+    "activity_logs": {
+      "title": "Activity Logs",
+      "description": "Record of user generation actions",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["image", "video", "text"] },
+        "prompt": { "type": "string" },
+        "status": { "type": "string", "enum": ["success", "error"] },
+        "timestamp": { "type": "number" },
+        "keyUsed": { "type": "string", "enum": ["user", "fallback"] },
+        "resultUrl": { "type": "string" }
+      },
+      "required": ["userId", "type", "prompt", "status", "timestamp", "keyUsed"]
     }
   },
   "firestore": {
-    "/users/{uid}": {
-      "schema": "User",
-      "description": "User profile document containing credits and role"
-    },
-    "/history/{historyId}": {
-      "schema": "History",
-      "description": "Generation history items"
-    }
+    "users/{userId}": { "schema": "users", "description": "User profiles" },
+    "api_keys/{keyId}": { "schema": "api_keys", "description": "User API keys" },
+    "activity_logs/{logId}": { "schema": "activity_logs", "description": "Generation logs" }
   }
 }

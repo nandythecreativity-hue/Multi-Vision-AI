@@ -58,7 +58,8 @@ import {
   deleteDoc,
   FirebaseUser,
   handleFirestoreError,
-  OperationType
+  OperationType,
+  serverTimestamp
 } from './firebase';
 
 import { AppMode, AspectRatio, HistoryItem, Product } from './types';
@@ -69,7 +70,8 @@ import {
   LIGHTING_STYLES, 
   CHARACTER_POSES, 
   CHARACTER_AGES, 
-  STYLE_PRESETS 
+  STYLE_PRESETS,
+  CAMERA_STYLE_DESCRIPTIONS
 } from './constants';
 
 // Types for AI Studio API Key Selection
@@ -124,7 +126,8 @@ export default function App() {
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [lastVideoOperation, setLastVideoOperation] = useState<any>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
+  const [generatedImageUrls, setGeneratedImageUrls] = useState<string[]>([]);
+  const [numOutputs, setNumOutputs] = useState<number>(1);
   const [generatedThumbnailUrl, setGeneratedThumbnailUrl] = useState<string | null>(null);
   const [generatedTitle, setGeneratedTitle] = useState<string>('');
   const [generatedDescription, setGeneratedDescription] = useState<string>('');
@@ -203,13 +206,17 @@ export default function App() {
           // Listen for real-time credit updates
           unsubscribeCredits = onSnapshot(userDocRef, (doc) => {
             if (doc.exists()) {
-              setCredits(doc.data().credits || 0);
+              const data = doc.data();
+              setCredits(data.credits || 0);
+              setIsAdmin(data.role === 'admin' || firebaseUser.email === adminEmail);
             }
           }, (error) => {
             console.error("Credits snapshot error:", error);
             // Handle permission denied gracefully
             if (error.code === 'permission-denied') {
               console.warn("Permission denied for credits listener. This is expected on logout.");
+            } else if (error.message.includes('offline') || error.message.includes('Failed to get document')) {
+              console.error("Firestore is offline. Please check your Firebase Console.");
             } else {
               handleFirestoreError(error, OperationType.GET, 'users');
             }
@@ -252,31 +259,41 @@ export default function App() {
 
   const checkApiKey = async () => {
     try {
-      if (manualApiKey || localStorage.getItem('veo_manual_api_key')) {
+      // 1. Check manual key (BYOK)
+      const savedKey = localStorage.getItem('veo_manual_api_key');
+      if (manualApiKey || savedKey) {
         setApiKeySelected(true);
         return;
       }
       
-      const envKey = (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
-      
+      // 2. Check AI Studio platform key (BYOK)
       if (window.aistudio) {
         const hasKey = await window.aistudio.hasSelectedApiKey();
-        // Automatic for new users: if envKey exists, consider it selected
-        setApiKeySelected(hasKey || !!envKey);
-      } else {
-        setApiKeySelected(!!envKey);
+        if (hasKey) {
+          setApiKeySelected(true);
+          return;
+        }
       }
+
+      // 3. Check environment key (System Default)
+      const envKey = (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      setApiKeySelected(!!envKey);
     } catch (err) {
       console.error("Error checking API key:", err);
-      setApiKeySelected(false);
+      // Fallback to true if we have an environment key, even if the check fails
+      const envKey = (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      setApiKeySelected(!!envKey);
     }
   };
 
   const handleSelectKey = async () => {
     try {
-      await window.aistudio.openSelectKey();
-      setApiKeySelected(true);
-      setShowSettings(false);
+      if (window.aistudio) {
+        await window.aistudio.openSelectKey();
+        // Assume success and proceed to app as per guidelines
+        setApiKeySelected(true);
+        setShowSettings(false);
+      }
     } catch (err) {
       console.error("Error opening key selector:", err);
     }
@@ -312,21 +329,26 @@ export default function App() {
   };
 
   const generatePromptIdea = async () => {
+    if (!user) {
+      handleLogin();
+      return;
+    }
     setIsSuggesting(true);
     try {
-      const currentApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
       
-      if (window.aistudio && !currentApiKey) {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        if (!hasKey) {
-          await window.aistudio.openSelectKey();
-        }
+      // Only force key selection if NO key is available at all
+      if (!rawApiKey && window.aistudio) {
+        await window.aistudio.openSelectKey();
+        setApiKeySelected(true);
       }
 
+      const currentApiKey = (rawApiKey || (process.env as any).API_KEY || '').replace(/[^\x00-\x7F]/g, "").trim();
       const ai = new GoogleGenAI({ apiKey: currentApiKey || '' });
       
+      const cameraContext = CAMERA_STYLE_DESCRIPTIONS[cameraStyle] || `Camera movement: ${cameraStyle}.`;
       const suggestionPrompt = `Generate a creative, highly detailed video prompt for Google Veo 3.1. 
-      The style is ${animationStyle}, the camera movement is ${cameraStyle}, and the scene is ${sceneType}.
+      The style is ${animationStyle}, the ${cameraContext}, and the scene is ${sceneType}.
       Return ONLY the prompt text, no extra commentary. Keep it under 50 words but very descriptive.`;
       
       const result = await ai.models.generateContent({
@@ -346,15 +368,28 @@ export default function App() {
   };
 
   const enhancePrompt = async () => {
+    if (!user) {
+      handleLogin();
+      return;
+    }
     if (!prompt.trim()) return;
     setIsEnhancing(true);
     try {
-      const currentApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      
+      // Only force key selection if NO key is available at all
+      if (!rawApiKey && window.aistudio) {
+        await window.aistudio.openSelectKey();
+        setApiKeySelected(true);
+      }
+
+      const currentApiKey = (rawApiKey || (process.env as any).API_KEY || '').replace(/[^\x00-\x7F]/g, "").trim();
       const ai = new GoogleGenAI({ apiKey: currentApiKey || '' });
       
+      const cameraContext = CAMERA_STYLE_DESCRIPTIONS[cameraStyle] || `Camera movement: ${cameraStyle}.`;
       const enhancementPrompt = `Enhance this visual prompt for an AI video generator. 
       Make it more descriptive, cinematic, and detailed. 
-      The style is ${animationStyle}, the camera movement is ${cameraStyle}, and the scene is ${sceneType}.
+      The style is ${animationStyle}, the ${cameraContext}, and the scene is ${sceneType}.
       Keep it under 100 words. Return ONLY the enhanced prompt.
       Original Prompt: "${prompt}"`;
       
@@ -383,8 +418,14 @@ export default function App() {
     setIsGeneratingMetadata(true);
     try {
       const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
-      const currentApiKey = (rawApiKey || '').replace(/[^\x00-\x7F]/g, "").trim();
-      if (!currentApiKey || currentApiKey === 'MY_GEMINI_API_KEY') return;
+      
+      // Only force key selection if NO key is available at all
+      if (!rawApiKey && window.aistudio) {
+        await window.aistudio.openSelectKey();
+        setApiKeySelected(true);
+      }
+
+      const currentApiKey = (rawApiKey || (process.env as any).API_KEY || '').replace(/[^\x00-\x7F]/g, "").trim();
       const ai = new GoogleGenAI({ apiKey: currentApiKey });
       
       const response = await ai.models.generateContent({
@@ -407,6 +448,11 @@ export default function App() {
   };
 
   const generateThumbnail = async () => {
+    if (!user) {
+      handleLogin();
+      return;
+    }
+
     if (credits < 5) {
       setError("Insufficient credits. You need 5 credits to generate a thumbnail.");
       return;
@@ -416,15 +462,14 @@ export default function App() {
     setStatus('Generating cinematic thumbnail...');
     try {
       const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
-      const currentApiKey = (rawApiKey || '').replace(/[^\x00-\x7F]/g, "").trim();
       
-      if (window.aistudio && !currentApiKey) {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        if (!hasKey) {
-          await window.aistudio.openSelectKey();
-        }
+      // Only force key selection if NO key is available at all
+      if (!rawApiKey && window.aistudio) {
+        await window.aistudio.openSelectKey();
+        setApiKeySelected(true);
       }
 
+      const currentApiKey = (rawApiKey || (process.env as any).API_KEY || '').replace(/[^\x00-\x7F]/g, "").trim();
       const ai = new GoogleGenAI({ apiKey: currentApiKey });
       
       const response = await ai.models.generateContent({
@@ -464,16 +509,26 @@ export default function App() {
       );
 
       unsubscribeHistory = onSnapshot(historyQuery, (snapshot) => {
-        const items = snapshot.docs.map(doc => ({
-          ...doc.data(),
-          id: doc.id
-        })) as HistoryItem[];
+        const items = snapshot.docs.map(doc => {
+          const data = doc.data();
+          // Convert Firestore Timestamp to number if necessary
+          let timestamp = data.timestamp;
+          if (timestamp && typeof timestamp === 'object' && 'toMillis' in timestamp) {
+            timestamp = timestamp.toMillis();
+          } else if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp) {
+            timestamp = timestamp.seconds * 1000;
+          }
+          
+          return {
+            ...data,
+            timestamp: timestamp || Date.now(),
+            id: doc.id
+          };
+        }) as HistoryItem[];
         setHistory(items);
       }, (error) => {
         console.error("History snapshot error:", error);
-        if (error.code !== 'permission-denied') {
-          handleFirestoreError(error, OperationType.GET, 'history');
-        }
+        handleFirestoreError(error, OperationType.GET, 'history');
       });
     } else {
       setHistory([]);
@@ -532,13 +587,12 @@ export default function App() {
       }
     }
 
-    const newItem = {
-      ...processedItem,
-      timestamp: Date.now(),
-      uid: user?.uid || 'anonymous'
-    };
-
     if (user) {
+      const newItem = {
+        ...processedItem,
+        timestamp: serverTimestamp(),
+        uid: user.uid
+      };
       try {
         await addDoc(collection(db, 'history'), newItem);
       } catch (err) {
@@ -547,8 +601,13 @@ export default function App() {
       }
     } else {
       // Fallback for anonymous users (not recommended for production)
+      const newItem = {
+        ...processedItem,
+        timestamp: Date.now(),
+        uid: 'anonymous'
+      };
       const localItem = { ...newItem, id: Math.random().toString(36).substring(2, 11) };
-      setHistory(prev => [localItem as HistoryItem, ...prev].slice(0, 20));
+      setHistory(prev => [localItem as unknown as HistoryItem, ...prev].slice(0, 20));
     }
   };
 
@@ -566,6 +625,10 @@ export default function App() {
   };
 
   const extendVideo = async () => {
+    if (!user) {
+      handleLogin();
+      return;
+    }
     if (!lastVideoOperation || resolution !== '720p') {
       setError("Only 720p videos can be extended.");
       return;
@@ -576,15 +639,15 @@ export default function App() {
     setStatus('Extending video... Adding 7 seconds of cinematic motion.');
 
     try {
-      if (window.aistudio) {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        if (!hasKey) {
-          await window.aistudio.openSelectKey();
-        }
+      const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      
+      // Only force key selection if NO key is available at all
+      if (!rawApiKey && window.aistudio) {
+        await window.aistudio.openSelectKey();
+        setApiKeySelected(true);
       }
 
-      const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
-      const currentApiKey = (rawApiKey || '').replace(/[^\x00-\x7F]/g, "").trim();
+      const currentApiKey = (rawApiKey || (process.env as any).API_KEY || '').replace(/[^\x00-\x7F]/g, "").trim();
       const ai = new GoogleGenAI({ apiKey: currentApiKey });
 
       let operation = await ai.models.generateVideos({
@@ -630,16 +693,16 @@ export default function App() {
 
   const handleVideoGenerate = async () => {
     if (!user) {
-      setError("Please login to generate content.");
-      setShowSettings(true);
+      handleLogin();
       return;
     }
     const isVideo = mode === 'video';
     const creditCost = isVideo ? 20 : 0;
     
-    // Image generation (non-video) requires BYOK
-    if (!isVideo && !manualApiKey) {
-      setError("Image generation requires BYOK (Bring Your Own Key) mode. Please enter your Gemini API key in Settings.");
+    // Image generation (non-video) fallback to system key if BYOK missing
+    const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+    if (!rawApiKey) {
+      setError("API Key Required. Please enter your Gemini API key in Settings or connect via AI Studio.");
       setShowSettings(true);
       return;
     }
@@ -657,7 +720,7 @@ export default function App() {
     setIsGenerating(true);
     setError(null);
     setGeneratedVideoUrl(null);
-    setGeneratedImageUrl(null);
+    setGeneratedImageUrls([]);
     setGeneratedThumbnailUrl(null);
     setGeneratedTitle('');
     setGeneratedDescription('');
@@ -673,20 +736,18 @@ export default function App() {
         });
       }
 
-      // For Veo models, we MUST ensure a paid API key is selected via the platform dialog
-      if (window.aistudio && mode === 'video' && !manualApiKey) {
+      // For Veo models, we try to use BYOK but fallback to system key
+      if (window.aistudio && mode === 'video' && !manualApiKey && !(process.env as any).API_KEY && !process.env.GEMINI_API_KEY) {
         const hasKey = await window.aistudio.hasSelectedApiKey();
         if (!hasKey) {
           await window.aistudio.openSelectKey();
-          // We return early and let the user click again once they've selected the key
-          setIsGenerating(false);
-          setStatus('');
-          return;
+          // Assume success and proceed as per guidelines
+          setApiKeySelected(true);
         }
       }
 
-      const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
-      const currentApiKey = (rawApiKey || '').replace(/[^\x00-\x7F]/g, "").trim();
+      const finalRawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      const currentApiKey = (finalRawApiKey || '').replace(/[^\x00-\x7F]/g, "").trim();
       
       const ai = new GoogleGenAI({ apiKey: currentApiKey });
 
@@ -731,7 +792,8 @@ export default function App() {
         const fidelityContext = productFidelity 
           ? `STRICT FIDELITY REQUIREMENT: The product in the video MUST be an IDENTICAL PIXEL-PERFECT REPLICA of the object in the reference image. Product Description: ${detailedProductDescription || 'The exact object shown in the reference image'}. Do not apply stylistic distortions to the product itself. Maintain all logos, materials, and proportions exactly.` 
           : "";
-        const styleContext = `Style: ${animationStyle}. Camera: ${cameraStyle}. Scene: ${sceneType}. Lighting: ${lightingStyle}. ${characterContext} ${productContext}`;
+        const cameraContext = CAMERA_STYLE_DESCRIPTIONS[cameraStyle] || `Camera: ${cameraStyle}.`;
+        const styleContext = `Style: ${animationStyle}. ${cameraContext} Scene: ${sceneType}. Lighting: ${lightingStyle}. ${characterContext} ${productContext}`;
         const upscaleContext = scaleImage ? "UPSCALE REQUIREMENT: Enhance the output to ultra-high resolution with maximum detail and clarity. Perform super-resolution upscaling while preserving all original features." : "";
         const finalPrompt = `${styleContext} ${prompt} ${fidelityContext} ${upscaleContext} ${enableSound ? '(Include high-quality atmospheric sound effects)' : '(Silent video)'} The product is the absolute central focus and must be visually indistinguishable from the source reference.`;
 
@@ -833,7 +895,7 @@ export default function App() {
         }
       } else {
         // Image Generation
-        setStatus('Generating high-fidelity image...');
+        setStatus(`Generating ${numOutputs > 1 ? numOutputs : 'high-fidelity'} image${numOutputs > 1 ? 's' : ''}...`);
         const characterContext = characterModel !== 'none' ? `Realistic ${characterAge} ${characterModel} model, ${characterPose} pose,` : '';
         const productContext = autoAddProduct && products.length > 0 
           ? `featuring the products (${products.map(p => p.name).join(', ')}) with exact visual likeness to the reference image, preserving all unique design elements and textures perfectly,` 
@@ -842,7 +904,8 @@ export default function App() {
           ? `PIXEL-PERFECT FIDELITY: The product must be a 1:1 identical match to the reference image. Detailed Product Features to preserve: ${detailedProductDescription || 'All visual details from the reference'}. Zero stylistic deviation allowed for the product object.` 
           : "";
         const upscaleContext = scaleImage ? "UPSCALE REQUIREMENT: Enhance the image to ultra-high resolution with maximum detail and clarity. Perform super-resolution upscaling while preserving all original features." : "";
-        const parts: any[] = [{ text: `${animationStyle} style, ${sceneType} scene, ${lightingStyle} lighting, ${characterContext} ${productContext} ${prompt}. ${fidelityContext} ${upscaleContext} The product must be visually indistinguishable from the reference.` }];
+        const cameraContext = CAMERA_STYLE_DESCRIPTIONS[cameraStyle] || `Camera: ${cameraStyle}.`;
+        const parts: any[] = [{ text: `${animationStyle} style, ${cameraContext} ${sceneType} scene, ${lightingStyle} lighting, ${characterContext} ${productContext} ${prompt}. ${fidelityContext} ${upscaleContext} The product must be visually indistinguishable from the reference.` }];
         
         // Add reference images if they exist
         if (images.length > 0) {
@@ -873,30 +936,49 @@ export default function App() {
           });
         }
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-image',
-          contents: { parts },
-          config: {
-            imageConfig: {
-              aspectRatio: aspectRatio as any
+        // Parallel generation for multiple outputs
+        if (numOutputs > 1) setStatus(`Generating ${numOutputs} images in parallel...`);
+        const generationPromises = Array.from({ length: numOutputs }).map(async (_, i) => {
+          try {
+            const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash-image',
+              contents: { parts },
+              config: {
+                imageConfig: {
+                  aspectRatio: aspectRatio as any
+                }
+              }
+            });
+
+            for (const part of response.candidates?.[0]?.content?.parts || []) {
+              if (part.inlineData) {
+                const url = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                // We don't await here to keep it fast, but we should handle history
+                addToHistory({
+                  type: 'image',
+                  url,
+                  prompt
+                });
+                return url;
+              }
             }
+          } catch (err) {
+            console.error(`Error generating image ${i + 1}:`, err);
+            return null;
           }
+          return null;
         });
 
-        for (const part of response.candidates?.[0]?.content?.parts || []) {
-          if (part.inlineData) {
-            const url = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-            setGeneratedImageUrl(url);
-            addToHistory({
-              type: 'image',
-              url,
-              prompt
-            });
-            setStatus('Generation complete!');
-            generateMetadata(prompt);
-            break;
-          }
+        const results = await Promise.all(generationPromises);
+        const newGeneratedUrls = results.filter((url): url is string => url !== null);
+
+        if (newGeneratedUrls.length === 0) {
+          throw new Error("Failed to generate any images. Please try again.");
         }
+
+        setGeneratedImageUrls(newGeneratedUrls);
+        setStatus('Generation complete!');
+        generateMetadata(prompt);
       }
     } catch (err: any) {
       console.error("Generation error details:", err);
@@ -1020,6 +1102,7 @@ export default function App() {
   const handleLogin = async () => {
     if (isLoggingIn) return;
     setIsLoggingIn(true);
+    setError(null);
     try {
       await loginWithGoogle();
     } catch (err: any) {
@@ -1036,62 +1119,59 @@ export default function App() {
     }
   };
 
-  if (apiKeySelected === false && !manualApiKey) {
+  if (!isAuthReady || apiKeySelected === null) {
     return (
-      <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-6 font-sans">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-[#111] border border-white/10 rounded-3xl p-8 text-center space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto no-scrollbar"
-        >
-          <div className="w-20 h-20 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto">
-            <Settings className="w-10 h-10 text-orange-500" />
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-2xl font-bold tracking-tight">API Key Required</h1>
-            <p className="text-white/60 text-sm">
-              To use Veo 3.1 video generation, you must provide a paid Google Cloud project API key.
-            </p>
+      <div className="min-h-screen bg-cyber-bg text-white flex items-center justify-center p-6 font-sans relative overflow-hidden">
+        {/* Background Atmosphere */}
+        <div className="absolute inset-0 bg-cyber-cyan/5 blur-[100px] animate-pulse" />
+        <div className="absolute inset-0 pointer-events-none z-[100] opacity-[0.03] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_2px,3px_100%]" />
+        
+        <div className="flex flex-col items-center gap-8 relative z-10">
+          <div className="relative">
+            <motion.div 
+              animate={{ rotate: 360 }}
+              transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+              className="w-32 h-32 rounded-full border-t-2 border-r-2 border-cyber-cyan/50 shadow-[0_0_30px_rgba(0,243,255,0.2)]"
+            />
+            <motion.div 
+              animate={{ rotate: -360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-4 rounded-full border-b-2 border-l-2 border-cyber-magenta/50 shadow-[0_0_30px_rgba(255,0,255,0.2)]"
+            />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Sparkles className="w-10 h-10 text-cyber-cyan animate-pulse drop-shadow-[0_0_12px_rgba(0,243,255,0.8)]" />
+            </div>
           </div>
           
-          <div className="space-y-4">
-            <button
-              onClick={handleSelectKey}
-              className="w-full bg-orange-500 hover:bg-orange-600 text-black font-bold py-4 rounded-2xl transition-all active:scale-[0.98]"
-            >
-              Select Paid Key (Recommended)
-            </button>
-            
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10"></div></div>
-              <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#111] px-2 text-white/40">Or Use BYOK Mode</span></div>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-[10px] text-white/40 mb-2">
-                Bring Your Own Key: Enter your personal Gemini API key to bypass platform credits.
-              </p>
-              <input 
-                type="password"
-                value={manualApiKey}
-                onChange={(e) => setManualApiKey(e.target.value)}
-                placeholder="Enter your Gemini API Key..."
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500/50"
-              />
-              <button
-                onClick={handleSaveManualKey}
-                disabled={!manualApiKey}
-                className="w-full bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 border border-orange-500/20 font-bold py-3 rounded-xl transition-all disabled:opacity-50 text-xs"
-              >
-                ACTIVATE BYOK MODE
-              </button>
+          <div className="text-center space-y-4">
+            <h2 className="text-xl font-black uppercase tracking-[0.5em] text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">
+              System Booting
+            </h2>
+            <div className="flex flex-col items-center gap-3">
+              <div className="flex items-center gap-3">
+                <div className={`w-2 h-2 rounded-full ${isAuthReady ? 'bg-cyber-cyan shadow-[0_0_8px_rgba(0,243,255,0.8)]' : 'bg-white/20 animate-pulse'}`} />
+                <p className={`text-[10px] font-bold uppercase tracking-widest transition-colors duration-500 ${isAuthReady ? 'text-cyber-cyan' : 'text-white/40'}`}>
+                  {isAuthReady ? 'Neural Auth Verified' : 'Establishing Neural Link...'}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className={`w-2 h-2 rounded-full ${apiKeySelected !== null ? 'bg-cyber-cyan shadow-[0_0_8px_rgba(0,243,255,0.8)]' : 'bg-white/20 animate-pulse'}`} />
+                <p className={`text-[10px] font-bold uppercase tracking-widest transition-colors duration-500 ${apiKeySelected !== null ? 'text-cyber-cyan' : 'text-white/40'}`}>
+                  {apiKeySelected !== null ? 'API Protocol Ready' : 'Syncing API Protocols...'}
+                </p>
+              </div>
             </div>
           </div>
-
-          <p className="text-xs text-white/40">
-            Learn more about <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">billing and API keys</a>.
-          </p>
-        </motion.div>
+          
+          <div className="w-64 h-1 bg-white/5 rounded-full overflow-hidden relative">
+            <motion.div 
+              initial={{ x: "-100%" }}
+              animate={{ x: "100%" }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-cyber-cyan to-transparent"
+            />
+          </div>
+        </div>
       </div>
     );
   }
@@ -1114,7 +1194,7 @@ export default function App() {
           setMode(m);
           if (m !== 'history') {
             setGeneratedVideoUrl(null);
-            setGeneratedImageUrl(null);
+            setGeneratedImageUrls([]);
             setError(null);
           }
         }} 
@@ -1124,7 +1204,7 @@ export default function App() {
           setMode('video');
           setPrompt('');
           setGeneratedVideoUrl(null);
-          setGeneratedImageUrl(null);
+          setGeneratedImageUrls([]);
           setError(null);
         }}
       />
@@ -1144,7 +1224,7 @@ export default function App() {
             setMode(m);
             if (m !== 'history') {
               setGeneratedVideoUrl(null);
-              setGeneratedImageUrl(null);
+              setGeneratedImageUrls([]);
               setError(null);
             }
           }} 
@@ -1157,7 +1237,7 @@ export default function App() {
             setMode('video');
             setPrompt('');
             setGeneratedVideoUrl(null);
-            setGeneratedImageUrl(null);
+            setGeneratedImageUrls([]);
             setError(null);
           }}
           viewMode={viewMode}
@@ -1310,6 +1390,8 @@ export default function App() {
             setLightingStyle={setLightingStyle}
             resolution={resolution}
             setResolution={setResolution}
+            numOutputs={numOutputs}
+            setNumOutputs={setNumOutputs}
             mode={mode}
           />
 
@@ -1443,9 +1525,9 @@ export default function App() {
                 <Maximize2 className="w-4 h-4" />
                 <h2 className="text-xs font-bold uppercase tracking-widest">Output Preview</h2>
               </div>
-              {(generatedVideoUrl || generatedImageUrl) && (
+              {(generatedVideoUrl || generatedImageUrls.length > 0) && (
                 <a 
-                  href={generatedVideoUrl || generatedImageUrl || ''} 
+                  href={generatedVideoUrl || generatedImageUrls[0] || ''} 
                   download={mode === 'video' ? "vision-ai-video.mp4" : "vision-ai-image.png"}
                   className="flex items-center gap-2 text-xs font-bold text-orange-500 hover:text-orange-400 transition-colors"
                 >
@@ -1508,18 +1590,41 @@ export default function App() {
                         className="w-full h-full object-cover"
                       />
                     </motion.div>
-                  ) : generatedImageUrl ? (
+                  ) : generatedImageUrls.length > 0 ? (
                     <motion.div 
-                      key="image"
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="w-full h-full relative"
+                      key="images"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className={`w-full h-full grid gap-2 ${
+                        generatedImageUrls.length === 1 ? 'grid-cols-1' :
+                        generatedImageUrls.length === 2 ? 'grid-cols-2' :
+                        'grid-cols-2 grid-rows-2'
+                      }`}
                     >
-                      <img 
-                        src={generatedImageUrl || null} 
-                        alt="Generated" 
-                        className="w-full h-full object-cover"
-                      />
+                      {generatedImageUrls.map((url, idx) => (
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: idx * 0.1 }}
+                          className="relative group overflow-hidden rounded-xl border border-white/10"
+                        >
+                          <img 
+                            src={url} 
+                            alt={`Generated ${idx + 1}`} 
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                            <a 
+                              href={url} 
+                              download={`vision-ai-image-${idx + 1}.png`}
+                              className="p-2 bg-cyber-cyan text-black rounded-full hover:scale-110 transition-transform"
+                            >
+                              <Download className="w-4 h-4" />
+                            </a>
+                          </div>
+                        </motion.div>
+                      ))}
                     </motion.div>
                   ) : (
                     <motion.div 
@@ -1550,7 +1655,7 @@ export default function App() {
             </div>
 
             <AnimatePresence>
-              {(generatedVideoUrl || generatedImageUrl) && (
+              {(generatedVideoUrl || generatedImageUrls.length > 0) && (
                 <div className="space-y-6">
                   <motion.div 
                     initial={{ opacity: 0, y: 10 }}
@@ -1562,7 +1667,7 @@ export default function App() {
                     </div>
                     <div>
                       <h3 className="font-bold text-green-500">Generation Successful</h3>
-                      <p className="text-xs text-white/60">Your {mode.replace(/-/g, ' ')} is ready for playback and download.</p>
+                      <p className="text-xs text-white/60">Your {mode.replace(/-/g, ' ')} {generatedImageUrls.length > 1 ? 'outputs are' : 'is'} ready for playback and download.</p>
                     </div>
                   </motion.div>
 
@@ -1577,14 +1682,30 @@ export default function App() {
                         {isExtending ? 'Extending...' : 'Extend +7s'}
                       </button>
                     )}
-                    <a 
-                      href={generatedVideoUrl || generatedImageUrl || ''} 
-                      download={mode === 'video' ? "vision-ai-video.mp4" : "vision-ai-image.png"}
-                      className="flex-1 py-4 bg-cyber-cyan hover:bg-cyber-cyan/80 text-black rounded-2xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,243,255,0.4)] active:scale-[0.98]"
-                    >
-                      <Download className="w-4 h-4" />
-                      Download {mode === 'video' ? 'MP4' : 'PNG'}
-                    </a>
+                    {generatedVideoUrl ? (
+                      <a 
+                        href={generatedVideoUrl} 
+                        download="vision-ai-video.mp4"
+                        className="flex-1 py-4 bg-cyber-cyan hover:bg-cyber-cyan/80 text-black rounded-2xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,243,255,0.4)] active:scale-[0.98]"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download MP4
+                      </a>
+                    ) : (
+                      <div className="flex-1 flex gap-2">
+                        {generatedImageUrls.map((url, idx) => (
+                          <a 
+                            key={idx}
+                            href={url} 
+                            download={`vision-ai-image-${idx + 1}.png`}
+                            className="flex-1 py-4 bg-cyber-cyan hover:bg-cyber-cyan/80 text-black rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,243,255,0.4)] active:scale-[0.98]"
+                          >
+                            <Download className="w-4 h-4" />
+                            {generatedImageUrls.length > 1 ? `#${idx + 1}` : 'Download PNG'}
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Metadata Section */}

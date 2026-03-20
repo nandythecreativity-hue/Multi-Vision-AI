@@ -21,7 +21,8 @@ import {
   SCENE_TYPES, 
   LIGHTING_STYLES,
   CHARACTER_AGES, 
-  CHARACTER_POSES 
+  CHARACTER_POSES,
+  CAMERA_STYLE_DESCRIPTIONS
 } from '../constants';
 import { CharacterModel, Product, AspectRatio } from '../types';
 
@@ -59,6 +60,8 @@ interface ControlsProps {
   setLightingStyle: (s: string) => void;
   resolution: string;
   setResolution: (r: any) => void;
+  numOutputs: number;
+  setNumOutputs: (n: number) => void;
   mode: string;
 }
 
@@ -96,6 +99,8 @@ export const Controls: React.FC<ControlsProps> = ({
   setLightingStyle,
   resolution,
   setResolution,
+  numOutputs,
+  setNumOutputs,
   mode
 }) => {
   return (
@@ -127,6 +132,11 @@ export const Controls: React.FC<ControlsProps> = ({
           >
             {CAMERA_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+          {CAMERA_STYLE_DESCRIPTIONS[cameraStyle] && (
+            <p className="text-[9px] text-white/30 italic leading-tight mt-1">
+              {CAMERA_STYLE_DESCRIPTIONS[cameraStyle]}
+            </p>
+          )}
         </div>
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-white/40">
@@ -155,6 +165,31 @@ export const Controls: React.FC<ControlsProps> = ({
           </select>
         </div>
       </section>
+
+      {/* Number of Outputs (Image Mode Only) */}
+      {mode !== 'video' && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2 text-white/40">
+            <Layout className="w-3 h-3" />
+            <h2 className="text-[10px] font-bold uppercase tracking-widest">Number of Outputs</h2>
+          </div>
+          <div className="flex gap-2">
+            {[1, 2, 3, 4].map((num) => (
+              <button
+                key={num}
+                onClick={() => setNumOutputs(num)}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                  numOutputs === num 
+                    ? 'bg-cyber-cyan border-cyber-cyan text-black shadow-[0_0_15px_rgba(0,243,255,0.4)]' 
+                    : 'bg-white/5 border-white/10 text-white/60 hover:border-white/20'
+                }`}
+              >
+                {num}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Character Model Selection */}
       <section className="space-y-4">

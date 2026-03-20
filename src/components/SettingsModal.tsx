@@ -75,7 +75,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span className="text-sm font-black text-white">{credits} Credits Available</span>
                 </div>
                 <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest pt-1">
-                  Video: 20 Credits | Image: 0 Credits (BYOK Required)
+                  Video: 20 Credits | Image: 0 Credits
                 </p>
                 {!user && (
                   <p className="text-[10px] text-red-400 font-bold uppercase">Login required to see credits</p>

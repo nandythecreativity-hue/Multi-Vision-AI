@@ -23,6 +23,19 @@ export const CHARACTER_POSES = [
   'Default', 'Standing', 'Walking', 'Sitting', 'Running', 'Dancing', 'Posing', 'Action'
 ];
 
+export const CAMERA_STYLE_DESCRIPTIONS: Record<string, string> = {
+  'Default': 'Standard cinematic camera work.',
+  'Static': 'Fixed camera position, no movement, focus on the subject.',
+  'Pan Left': 'Smoothly panning the camera from right to left.',
+  'Pan Right': 'Smoothly panning the camera from left to right.',
+  'Zoom In': 'Gradually zooming the camera in towards the central subject.',
+  'Zoom Out': 'Gradually zooming the camera out to reveal more of the scene.',
+  'Drone Shot': 'High-altitude aerial view with smooth sweeping motion, like a drone.',
+  'Handheld': 'Dynamic, slightly shaky handheld camera movement for a realistic, immersive feel.',
+  'Low Angle': 'Camera positioned low, looking up at the subject to make it appear grand and powerful.',
+  'High Angle': 'Camera positioned high, looking down at the subject for a comprehensive overview.'
+};
+
 export const STYLE_PRESETS = [
   { name: 'Cinematic', icon: '🎬', prompt: 'cinematic lighting, 8k, highly detailed, professional color grading' },
   { name: 'Cyberpunk', icon: '🌃', prompt: 'neon lights, futuristic city, rainy night, synthwave aesthetic' },
