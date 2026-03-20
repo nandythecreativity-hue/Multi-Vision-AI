@@ -283,7 +283,9 @@ export default function App() {
   };
 
   const handleSaveManualKey = () => {
-    localStorage.setItem('veo_manual_api_key', manualApiKey);
+    const sanitizedKey = (manualApiKey || '').replace(/[^\x00-\x7F]/g, "").trim();
+    setManualApiKey(sanitizedKey);
+    localStorage.setItem('veo_manual_api_key', sanitizedKey);
     setShowSettings(false);
     setApiKeySelected(true);
   };
@@ -380,7 +382,8 @@ export default function App() {
   const generateMetadata = async (contentPrompt: string) => {
     setIsGeneratingMetadata(true);
     try {
-      const currentApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      const currentApiKey = (rawApiKey || '').replace(/[^\x00-\x7F]/g, "").trim();
       if (!currentApiKey || currentApiKey === 'MY_GEMINI_API_KEY') return;
       const ai = new GoogleGenAI({ apiKey: currentApiKey });
       
@@ -412,7 +415,8 @@ export default function App() {
     setIsGeneratingThumbnail(true);
     setStatus('Generating cinematic thumbnail...');
     try {
-      const currentApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      const currentApiKey = (rawApiKey || '').replace(/[^\x00-\x7F]/g, "").trim();
       
       if (window.aistudio && !currentApiKey) {
         const hasKey = await window.aistudio.hasSelectedApiKey();
@@ -421,7 +425,7 @@ export default function App() {
         }
       }
 
-      const ai = new GoogleGenAI({ apiKey: currentApiKey || '' });
+      const ai = new GoogleGenAI({ apiKey: currentApiKey });
       
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
@@ -480,9 +484,56 @@ export default function App() {
     };
   }, [user]);
 
+  const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height *= maxWidth / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width *= maxHeight / height;
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7)); // Use JPEG with 0.7 quality for compression
+      };
+      img.onerror = () => resolve(base64Str); // Fallback to original if error
+    });
+  };
+
   const addToHistory = async (item: Omit<HistoryItem, 'id' | 'timestamp'>) => {
+    let processedItem = { ...item };
+    
+    // If it's an image and the URL is a base64 string, check size
+    if (item.type === 'image' && item.url.startsWith('data:image')) {
+      // Approximate size check (1MB limit for Firestore doc)
+      // If > 800KB (to be safe with other fields), compress it
+      if (item.url.length > 800000) {
+        try {
+          const compressedUrl = await compressImage(item.url);
+          processedItem.url = compressedUrl;
+        } catch (err) {
+          console.error("Compression error:", err);
+        }
+      }
+    }
+
     const newItem = {
-      ...item,
+      ...processedItem,
       timestamp: Date.now(),
       uid: user?.uid || 'anonymous'
     };
@@ -532,8 +583,9 @@ export default function App() {
         }
       }
 
-      const currentApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
-      const ai = new GoogleGenAI({ apiKey: currentApiKey || '' });
+      const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      const currentApiKey = (rawApiKey || '').replace(/[^\x00-\x7F]/g, "").trim();
+      const ai = new GoogleGenAI({ apiKey: currentApiKey });
 
       let operation = await ai.models.generateVideos({
         model: 'veo-3.1-generate-preview',
@@ -633,9 +685,10 @@ export default function App() {
         }
       }
 
-      const currentApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
+      const currentApiKey = (rawApiKey || '').replace(/[^\x00-\x7F]/g, "").trim();
       
-      const ai = new GoogleGenAI({ apiKey: currentApiKey || '' });
+      const ai = new GoogleGenAI({ apiKey: currentApiKey });
 
       // Step 1: Analyze Reference Image for maximum fidelity if images exist
       let detailedProductDescription = "";

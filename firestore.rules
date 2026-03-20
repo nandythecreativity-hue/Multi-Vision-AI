@@ -48,9 +48,8 @@ service cloud.firestore {
     }
 
     function isValidHistory(data) {
-      return data.id is string && data.id.size() > 0 && data.id.size() < 128 &&
-             data.type in ['video', 'image'] &&
-             data.url is string && data.url.size() < 2048 &&
+      return data.type in ['video', 'image'] &&
+             data.url is string && data.url.size() < 2097152 && // 2MB for base64 images
              data.prompt is string && data.prompt.size() < 5000 &&
              data.timestamp is number &&
              data.uid == request.auth.uid &&
