@@ -643,6 +643,17 @@ export default function App() {
   const addToHistory = async (item: Omit<HistoryItem, 'id' | 'timestamp'>) => {
     let processedItem = { ...item };
     
+    // Sanitize operation if it exists (it might be a complex class instance from GenAI SDK)
+    if (processedItem.operation) {
+      try {
+        // Only keep serializable parts
+        processedItem.operation = JSON.parse(JSON.stringify(processedItem.operation));
+      } catch (err) {
+        console.warn("Could not serialize operation metadata:", err);
+        delete processedItem.operation;
+      }
+    }
+    
     // If it's an image and the URL is a base64 string, check size
     if (item.type === 'image' && item.url.startsWith('data:image')) {
       // Approximate size check (1MB limit for Firestore doc)
