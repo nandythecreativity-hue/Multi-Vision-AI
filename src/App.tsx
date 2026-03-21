@@ -513,7 +513,7 @@ export default function App() {
       return;
     }
 
-    if (imageCredits < 2) {
+    if (!isAdmin && imageCredits < 2) {
       setError("Insufficient image credits. You need 2 image credits to generate a thumbnail.");
       return;
     }
@@ -522,9 +522,14 @@ export default function App() {
     setStatus('Generating cinematic thumbnail...');
     try {
       const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        imageCredits: increment(-2)
-      });
+      const updates: any = {};
+      if (!isAdmin) {
+        updates.imageCredits = increment(-2);
+      }
+      
+      if (Object.keys(updates).length > 0) {
+        await updateDoc(userDocRef, updates);
+      }
 
       const rawApiKey = manualApiKey || (process.env as any).API_KEY || process.env.GEMINI_API_KEY;
       
@@ -762,7 +767,7 @@ export default function App() {
       return;
     }
     const isVideo = mode === 'video';
-    const creditCost = isVideo ? 20 : 4;
+    const creditCost = isVideo ? 20 : 4 * numOutputs;
     const currentCredits = isVideo ? videoCredits : imageCredits;
     
     // Image generation (non-video) fallback to system key if BYOK missing
@@ -773,7 +778,7 @@ export default function App() {
       return;
     }
     
-    if (currentCredits < creditCost) {
+    if (!isAdmin && currentCredits < creditCost) {
       setError(`Insufficient ${isVideo ? 'video' : 'image'} credits. You need ${creditCost} credits to generate a ${isVideo ? 'video' : 'image'}.`);
       return;
     }
@@ -802,10 +807,10 @@ export default function App() {
       };
       
       if (isVideo) {
-        updates.videoCredits = increment(-creditCost);
+        if (!isAdmin) updates.videoCredits = increment(-creditCost);
         updates.videoCount = increment(1);
       } else {
-        updates.imageCredits = increment(-creditCost);
+        if (!isAdmin) updates.imageCredits = increment(-creditCost);
         updates.imageCount = increment(numOutputs);
       }
       
@@ -1172,6 +1177,7 @@ export default function App() {
 
   const [targetEmail, setTargetEmail] = useState('');
   const [targetAmount, setTargetAmount] = useState(50);
+  const [targetCreditType, setTargetCreditType] = useState<'image' | 'video'>('image');
   const [adminActionLoading, setAdminActionLoading] = useState(false);
 
   const handleAdminAddCredits = async () => {
@@ -1185,19 +1191,24 @@ export default function App() {
       
       if (querySnapshot.empty) {
         setError("User with that email not found.");
+        setAdminActionLoading(false);
         return;
       }
 
       const targetUserDoc = querySnapshot.docs[0];
       const targetUserRef = doc(db, 'users', targetUserDoc.id);
       
-      await updateDoc(targetUserRef, {
-        imageCredits: increment(targetAmount),
-        videoCredits: increment(Math.floor(targetAmount / 2.5)) // Proportional video credits
-      });
+      const updateData: any = {};
+      if (targetCreditType === 'image') {
+        updateData.imageCredits = increment(targetAmount);
+      } else {
+        updateData.videoCredits = increment(targetAmount);
+      }
+      
+      await updateDoc(targetUserRef, updateData);
       
       setTargetEmail('');
-      alert(`Successfully added credits to ${targetEmail}`);
+      alert(`Successfully added ${targetAmount} ${targetCreditType} credits to ${targetEmail}`);
     } catch (err) {
       console.error("Admin add credits error:", err);
       setError("Failed to add credits to user.");
@@ -1371,6 +1382,8 @@ export default function App() {
         setTargetEmail={setTargetEmail}
         targetAmount={targetAmount}
         setTargetAmount={setTargetAmount}
+        targetCreditType={targetCreditType}
+        setTargetCreditType={setTargetCreditType}
         handleAdminAddCredits={handleAdminAddCredits}
         adminActionLoading={adminActionLoading}
         setMode={setMode}

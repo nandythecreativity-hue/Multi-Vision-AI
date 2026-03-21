@@ -103,7 +103,7 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow get: if true;
+      allow get: if isOwner(userId) || isAdmin();
       allow list: if isAdmin();
       
       allow create: if isAuthenticated() && 
@@ -122,22 +122,22 @@ service cloud.firestore {
     }
 
     match /history/{historyId} {
-      allow read: if isAuthenticated() && (request.auth.uid == resource.data.uid || isAdmin());
+      allow read: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
       
       allow create: if isAuthenticated() && 
                       request.auth.uid == request.resource.data.uid &&
                       isValidHistory(request.resource.data);
       
       allow update, delete: if isAuthenticated() && 
-                              (request.auth.uid == resource.data.uid || isAdmin());
+                              (resource.data.uid == request.auth.uid || isAdmin());
     }
 
     match /test/{testId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAuthenticated() && request.auth.uid == request.resource.data.uid;
     }
 
     match /{path=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

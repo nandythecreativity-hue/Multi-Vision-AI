@@ -19,6 +19,8 @@ interface SettingsModalProps {
   setTargetEmail: (email: string) => void;
   targetAmount: number;
   setTargetAmount: (amount: number) => void;
+  targetCreditType: 'image' | 'video';
+  setTargetCreditType: (type: 'image' | 'video') => void;
   handleAdminAddCredits: () => void;
   adminActionLoading: boolean;
   setMode: (mode: any) => void;
@@ -41,6 +43,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   setTargetEmail,
   targetAmount,
   setTargetAmount,
+  targetCreditType,
+  setTargetCreditType,
   handleAdminAddCredits,
   adminActionLoading,
   setMode
@@ -116,7 +120,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className="w-full bg-orange-500 hover:bg-orange-600 text-black font-black py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs"
                       >
                         <Coins className="w-4 h-4" />
-                        TOP UP +50 CREDITS (SELF)
+                        TOP UP +100 IMG / +40 VID (SELF)
                       </button>
                     </div>
 
@@ -130,6 +134,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         placeholder="User Email..."
                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500/50"
                       />
+                      
+                      <div className="flex gap-2 p-1 bg-black/20 rounded-xl border border-white/5">
+                        <button 
+                          onClick={() => setTargetCreditType('image')}
+                          className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${targetCreditType === 'image' ? 'bg-cyber-cyan text-black shadow-[0_0_10px_rgba(0,243,255,0.3)]' : 'text-white/40 hover:text-white'}`}
+                        >
+                          Image
+                        </button>
+                        <button 
+                          onClick={() => setTargetCreditType('video')}
+                          className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${targetCreditType === 'video' ? 'bg-orange-500 text-black shadow-[0_0_10px_rgba(249,115,22,0.3)]' : 'text-white/40 hover:text-white'}`}
+                        >
+                          Video
+                        </button>
+                      </div>
+
                       <div className="flex gap-2">
                         <input 
                           type="number"
@@ -143,7 +163,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           disabled={adminActionLoading || !targetEmail}
                           className="flex-1 bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all text-xs"
                         >
-                          {adminActionLoading ? "PROCESSING..." : "ADD CREDITS"}
+                          {adminActionLoading ? "PROCESSING..." : `ADD ${targetCreditType.toUpperCase()} CREDITS`}
                         </button>
                       </div>
                     </div>
