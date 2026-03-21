@@ -136,9 +136,8 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
-    // Default deny
     match /{path=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
   }
 }

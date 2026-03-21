@@ -62,18 +62,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
             key={m.id}
             onClick={() => setMode(m.id)}
             className={`flex items-center gap-4 px-3 sm:px-4 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all duration-300 relative group ${
-              mode === m.id ? 'text-black' : 'text-white/40 hover:text-white hover:bg-white/5'
+              mode === m.id 
+                ? (m.id === 'admin' ? 'text-black' : 'text-black') 
+                : 'text-white/40 hover:text-white hover:bg-white/5'
             }`}
             title={m.label}
           >
             {mode === m.id && (
               <motion.div 
                 layoutId="sidebar-nav-pill"
-                className="absolute inset-0 bg-cyber-cyan rounded-2xl shadow-[0_0_20px_rgba(0,243,255,0.4)]"
+                className={`absolute inset-0 rounded-2xl shadow-[0_0_20px_rgba(0,243,255,0.4)] ${
+                  m.id === 'admin' ? 'bg-cyber-magenta shadow-[0_0_20px_rgba(255,0,255,0.4)]' : 'bg-cyber-cyan'
+                }`}
               />
             )}
-            <m.icon className={`w-4 h-4 relative z-10 shrink-0 ${mode === m.id ? 'text-black' : 'text-white/20 group-hover:text-cyber-cyan'} transition-colors`} />
+            <m.icon className={`w-4 h-4 relative z-10 shrink-0 ${
+              mode === m.id 
+                ? 'text-black' 
+                : (m.id === 'admin' ? 'text-cyber-magenta group-hover:text-cyber-magenta' : 'text-white/20 group-hover:text-cyber-cyan')
+            } transition-colors`} />
             <span className={`relative z-10 truncate ${viewMode === 'portrait' ? 'hidden sm:block' : 'block'}`}>{m.label}</span>
+            {m.id === 'admin' && (
+              <span className="ml-auto px-1.5 py-0.5 bg-cyber-magenta text-black text-[7px] font-black rounded-sm uppercase tracking-tighter shadow-[0_0_10px_rgba(255,0,255,0.4)] relative z-10">ADMIN</span>
+            )}
+            {m.id === 'admin' && mode !== 'admin' && (
+              <span className="absolute right-2 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-cyber-magenta rounded-full animate-ping" />
+            )}
           </button>
         ))}
       </nav>

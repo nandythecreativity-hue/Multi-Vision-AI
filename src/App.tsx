@@ -180,9 +180,24 @@ export default function App() {
       setIsAuthReady(true);
       
       if (firebaseUser) {
+        // Test Firestore write
+        try {
+          const testDocRef = doc(db, 'test', 'ping-' + firebaseUser.uid);
+          await setDoc(testDocRef, { 
+            timestamp: serverTimestamp(), 
+            message: 'ping',
+            uid: firebaseUser.uid 
+          });
+          console.log('Firestore test write successful for user:', firebaseUser.uid);
+        } catch (testErr) {
+          console.error('Firestore test write failed:', testErr);
+        }
+
         // Check if admin
         const adminEmail = "nandythecreativity@gmail.com";
-        setIsAdmin(firebaseUser.email === adminEmail);
+        const isUserAdmin = firebaseUser.email === adminEmail;
+        setIsAdmin(isUserAdmin);
+        console.log('User logged in:', firebaseUser.email, 'isAdmin:', isUserAdmin);
 
         // Sync credits from Firestore
         const userDocRef = doc(db, 'users', firebaseUser.uid);

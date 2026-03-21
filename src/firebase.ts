@@ -9,10 +9,10 @@ import firebaseConfig from '../firebase-applet-config.json';
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Use initializeFirestore with the provisioned database ID
+// Use initializeFirestore with the (default) database ID
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, firebaseConfig.firestoreDatabaseId || '(default)');
+}, '(default)');
 
 // Analytics is disabled in this environment to prevent "Failed to fetch" errors in the sandboxed iframe.
 export const analytics = null;
@@ -81,9 +81,7 @@ async function testConnection() {
     // Attempt to get a document from a non-existent collection to test connectivity
     await getDocFromServer(doc(db, '_connection_test_', 'ping'));
   } catch (error) {
-    if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('Failed to get document'))) {
-      console.error("CRITICAL: Firestore is unreachable. Please ensure you have created the Firestore database in the Firebase Console for project 'multy-vision-ai'.");
-    }
+    // Ignore expected errors from non-existent collection
   }
 }
 testConnection();

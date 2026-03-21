@@ -140,7 +140,12 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="hidden sm:flex flex-col items-end">
                 <div className="flex items-center gap-1.5">
                   {isAdmin && (
-                    <span className="px-1.5 py-0.5 bg-cyber-magenta text-black text-[7px] font-black rounded-sm uppercase tracking-tighter shadow-[0_0_10px_rgba(255,0,255,0.4)]">ADMIN</span>
+                    <button 
+                      onClick={() => setMode('admin')}
+                      className={`px-2 py-0.5 bg-cyber-magenta text-black text-[8px] font-black rounded-sm uppercase tracking-tighter shadow-[0_0_10px_rgba(255,0,255,0.4)] hover:scale-105 transition-transform ${mode === 'admin' ? 'ring-2 ring-white' : ''}`}
+                    >
+                      ADMIN PANEL
+                    </button>
                   )}
                   <span className="text-[9px] font-black text-white/30 uppercase tracking-widest">Operator</span>
                 </div>
