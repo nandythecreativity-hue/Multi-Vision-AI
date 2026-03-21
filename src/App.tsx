@@ -542,16 +542,30 @@ export default function App() {
       const currentApiKey = (rawApiKey || (process.env as any).API_KEY || '').replace(/[^\x00-\x7F]/g, "").trim();
       const ai = new GoogleGenAI({ apiKey: currentApiKey });
       
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-image-preview',
-        contents: { parts: [{ text: `High-quality cinematic YouTube thumbnail for: ${prompt}. Style: ${animationStyle}. Vibrant colors, eye-catching composition, no text. STRICT PROMPT ADHERENCE: Follow the prompt details exactly.` }] },
-        config: {
-          imageConfig: {
-            aspectRatio: '16:9',
-            imageSize: '1K'
+      let response;
+      try {
+        response = await ai.models.generateContent({
+          model: 'gemini-3.1-flash-image-preview',
+          contents: { parts: [{ text: `High-quality cinematic YouTube thumbnail for: ${prompt}. Style: ${animationStyle}. Vibrant colors, eye-catching composition, no text. STRICT PROMPT ADHERENCE: Follow the prompt details exactly.` }] },
+          config: {
+            imageConfig: {
+              aspectRatio: '16:9',
+              imageSize: '1K'
+            }
           }
+        });
+      } catch (innerErr: any) {
+        const innerMsg = innerErr.message || String(innerErr);
+        if (innerMsg.includes("404") || innerMsg.includes("not found") || innerMsg.includes("403") || innerMsg.includes("permission")) {
+          console.warn("Gemini 3.1 Image Preview failed for thumbnail, falling back to 2.5 Flash Image...");
+          response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts: [{ text: `High-quality cinematic YouTube thumbnail for: ${prompt}. Style: ${animationStyle}. Vibrant colors, eye-catching composition, no text. STRICT PROMPT ADHERENCE: Follow the prompt details exactly.` }] }
+          });
+        } else {
+          throw innerErr;
         }
-      });
+      }
 
       for (const part of response.candidates?.[0]?.content?.parts || []) {
         if (part.inlineData) {
@@ -846,17 +860,20 @@ export default function App() {
       let detailedProductDescription = "";
       const referenceForAnalysis = images[0] || (autoAddProduct && products.length > 0 ? products[0].image : null);
       
-      if (referenceForAnalysis && productFidelity) {
+      if (referenceForAnalysis && productFidelity && typeof referenceForAnalysis === 'string' && referenceForAnalysis.includes(',')) {
         setStatus('Analyzing product details for 100% fidelity...');
         try {
+          const mimeType = referenceForAnalysis.split(';')[0].split(':')[1];
+          const base64Data = referenceForAnalysis.split(',')[1];
+          
           const analysisResponse = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: {
               parts: [
                 { 
                   inlineData: { 
-                    data: referenceForAnalysis.split(',')[1], 
-                    mimeType: referenceForAnalysis.split(';')[0].split(':')[1] 
+                    data: base64Data, 
+                    mimeType: mimeType 
                   } 
                 },
                 { text: "Describe this specific product in extreme, technical detail. Focus on its exact geometry, unique textures, specific colors, branding/logos, and any distinctive design elements. Provide a technical description that ensures an AI model can recreate this EXACT object without any variations. Be concise but highly specific." }
@@ -1030,14 +1047,16 @@ export default function App() {
         // Add reference images if they exist
         if (images.length > 0) {
           images.forEach(img => {
-            const base64Data = img.split(',')[1];
-            const mimeType = img.split(';')[0].split(':')[1];
-            parts.unshift({
-              inlineData: {
-                data: base64Data,
-                mimeType: mimeType,
-              },
-            });
+            if (img && img.includes(',')) {
+              const base64Data = img.split(',')[1];
+              const mimeType = img.split(';')[0].split(':')[1];
+              parts.unshift({
+                inlineData: {
+                  data: base64Data,
+                  mimeType: mimeType,
+                },
+              });
+            }
           });
         }
 
@@ -1045,14 +1064,16 @@ export default function App() {
         if (autoAddProduct && products.length > 0) {
           // Add up to 2 products as visual context
           products.slice(0, 2).forEach(p => {
-            const base64Data = p.image.split(',')[1];
-            const mimeType = p.image.split(';')[0].split(':')[1];
-            parts.unshift({
-              inlineData: {
-                data: base64Data,
-                mimeType: mimeType,
-              },
-            });
+            if (p.image && p.image.includes(',')) {
+              const base64Data = p.image.split(',')[1];
+              const mimeType = p.image.split(';')[0].split(':')[1];
+              parts.unshift({
+                inlineData: {
+                  data: base64Data,
+                  mimeType: mimeType,
+                },
+              });
+            }
           });
         }
 
@@ -1060,16 +1081,30 @@ export default function App() {
         if (numOutputs > 1) setStatus(`Generating ${numOutputs} images in parallel...`);
         const generationPromises = Array.from({ length: numOutputs }).map(async (_, i) => {
           try {
-            const response = await ai.models.generateContent({
-              model: 'gemini-3.1-flash-image-preview',
-              contents: { parts },
-              config: {
-                imageConfig: {
-                  aspectRatio: aspectRatio as any,
-                  imageSize: scaleImage ? '2K' : '1K'
+            let response;
+            try {
+              response = await ai.models.generateContent({
+                model: 'gemini-3.1-flash-image-preview',
+                contents: { parts },
+                config: {
+                  imageConfig: {
+                    aspectRatio: aspectRatio as any,
+                    imageSize: scaleImage ? '2K' : '1K'
+                  }
                 }
+              });
+            } catch (innerErr: any) {
+              const innerMsg = innerErr.message || String(innerErr);
+              if (innerMsg.includes("404") || innerMsg.includes("not found") || innerMsg.includes("403") || innerMsg.includes("permission")) {
+                console.warn("Gemini 3.1 Image Preview failed or unavailable, falling back to 2.5 Flash Image...");
+                response = await ai.models.generateContent({
+                  model: 'gemini-2.5-flash-image',
+                  contents: { parts }
+                });
+              } else {
+                throw innerErr;
               }
-            });
+            }
 
             for (const part of response.candidates?.[0]?.content?.parts || []) {
               if (part.inlineData) {
@@ -1135,7 +1170,7 @@ export default function App() {
           setError("PERMISSION DENIED: The selected API key does not have permission for Veo 3.1. This model requires a key from a PAID Google Cloud project with billing enabled.");
         }
       } else {
-        setError(errorMsg || "An error occurred during video generation.");
+        setError(errorMsg || `An error occurred during ${isVideo ? 'video' : 'image'} generation.`);
       }
     } finally {
       setIsGenerating(false);

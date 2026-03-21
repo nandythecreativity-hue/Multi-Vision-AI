@@ -45,7 +45,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && 
-        (request.auth.token.email == "nandythecreativity@gmail.com" && request.auth.token.email_verified == true);
+        (request.auth.token.email == "nandythecreativity@gmail.com");
     }
 
     function hasRequiredFields(fields) {
@@ -119,6 +119,8 @@ service cloud.firestore {
                          request.resource.data.role == resource.data.role &&
                          uidNotModified())
                       );
+      
+      allow delete: if isAdmin();
     }
 
     match /history/{historyId} {
@@ -133,7 +135,12 @@ service cloud.firestore {
     }
 
     match /test/{testId} {
-      allow read, write: if isAuthenticated() && request.auth.uid == request.resource.data.uid;
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == request.resource.data.uid;
+    }
+
+    match /_connection_test_/{id} {
+      allow read: if true;
     }
 
     match /{path=**} {
